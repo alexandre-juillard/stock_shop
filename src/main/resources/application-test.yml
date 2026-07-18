@@ -1,0 +1,19 @@
+spring:
+  jpa:
+    hibernate:
+      ddl-auto: validate
+    show-sql: false
+  flyway:
+    enabled: true
+
+springdoc:
+  api-docs:
+    enabled: false
+
+logging:
+  level:
+    root: WARN
+    fr.stockshop: INFO
+    org.testcontainers: INFO
+    com.github.dockerjava: WARN
+

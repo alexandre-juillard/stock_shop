@@ -1,0 +1,68 @@
+services:
+  db:
+    image: postgres:17-alpine
+    container_name: stock-api-db
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: ${DB_NAME}
+      POSTGRES_USER: ${DB_USER}
+      POSTGRES_PASSWORD: ${DB_PASSWORD}
+    ports:
+      - "${DB_PORT:-5432}:5432"
+    volumes:
+      - stock-api-db-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${DB_USER} -d ${DB_NAME}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - stock-api-network
+
+  api:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: stock-api
+    restart: unless-stopped
+    depends_on:
+      db:
+        condition: service_healthy
+    environment:
+      SPRING_PROFILES_ACTIVE: ${SPRING_PROFILES_ACTIVE:-dev}
+      # A l'intérieur du réseau Docker, la base est joignable via le nom de service "db"
+      # et son port interne 5432 (le DB_PORT de l'hôte sert uniquement au mapping ci-dessus).
+      DB_HOST: db
+      DB_PORT: 5432
+      DB_NAME: ${DB_NAME}
+      DB_USER: ${DB_USER}
+      DB_PASSWORD: ${DB_PASSWORD}
+    ports:
+      - "${SERVER_PORT:-8080}:8080"
+    networks:
+      - stock-api-network
+
+  pgadmin:
+    image: dpage/pgadmin4:latest
+    container_name: stock-api-pgadmin
+    restart: unless-stopped
+    depends_on:
+      - db
+    environment:
+      PGADMIN_DEFAULT_EMAIL: ${PGADMIN_EMAIL:-admin@stockshop.fr}
+      PGADMIN_DEFAULT_PASSWORD: ${PGADMIN_PASSWORD:-admin}
+    ports:
+      - "${PGADMIN_PORT:-5050}:80"
+    volumes:
+      - stock-api-pgadmin-data:/var/lib/pgadmin
+    networks:
+      - stock-api-network
+
+volumes:
+  stock-api-db-data:
+  stock-api-pgadmin-data:
+
+networks:
+  stock-api-network:
+    driver: bridge
+
