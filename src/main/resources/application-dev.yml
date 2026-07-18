@@ -9,6 +9,12 @@ spring:
       hibernate:
         format_sql: true
 
+# Secret de développement UNIQUEMENT (64 octets encodés en base64).
+# Ne jamais réutiliser cette valeur en production : définir JWT_SECRET dans l'environnement.
+security:
+  jwt:
+    secret: ${JWT_SECRET:ZGV2LW9ubHktc2VjcmV0LWtleS1kby1ub3QtdXNlLWluLXByb2R1Y3Rpb24tcGxlYXNlLWNoYW5nZS1tZQ==}
+
 logging:
   level:
     fr.stockshop: DEBUG
