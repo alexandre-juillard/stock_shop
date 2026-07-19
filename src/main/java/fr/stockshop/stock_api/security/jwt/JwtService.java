@@ -1,7 +1,9 @@
 package fr.stockshop.stock_api.security.jwt;
 
 import java.util.Date;
+import java.util.HashMap;
 import java.util.Map;
+import java.util.UUID;
 import java.util.function.Function;
 import javax.crypto.SecretKey;
 
@@ -9,6 +11,7 @@ import org.springframework.beans.factory.annotation.Value;
 import org.springframework.security.core.userdetails.UserDetails;
 import org.springframework.stereotype.Component;
 
+import fr.stockshop.stock_api.user.entity.User;
 import io.jsonwebtoken.Claims;
 import io.jsonwebtoken.Jwts;
 import io.jsonwebtoken.io.Decoders;
@@ -18,6 +21,8 @@ import java.time.Instant;
 
 /**
  * Génération et validation des jetons JWT (access + refresh).
+ * Chaque token porte au minimum : {@code sub} (email), {@code userId},
+ * {@code email}, {@code iat} et {@code exp} (AC-4 du ticket INF-003).
  */
 @Component
 public class JwtService {
@@ -31,12 +36,12 @@ public class JwtService {
 	@Value("${security.jwt.refresh-token-expiration}")
 	private long refreshTokenExpiration;
 
-	public String generateAccessToken(UserDetails userDetails) {
-		return buildToken(userDetails, accessTokenExpiration, Map.of("type", "access"));
+	public String generateAccessToken(User user) {
+		return buildToken(user, accessTokenExpiration, "access");
 	}
 
-	public String generateRefreshToken(UserDetails userDetails) {
-		return buildToken(userDetails, refreshTokenExpiration, Map.of("type", "refresh"));
+	public String generateRefreshToken(User user) {
+		return buildToken(user, refreshTokenExpiration, "refresh");
 	}
 
 	public String extractUsername(String token) {
@@ -61,11 +66,18 @@ public class JwtService {
 		return extractClaim(token, Claims::getExpiration).before(new Date());
 	}
 
-	private String buildToken(UserDetails userDetails, long expirationMillis, Map<String, Object> claims) {
+	private String buildToken(User user, long expirationMillis, String type) {
 		Instant now = Instant.now();
+
+		Map<String, Object> claims = new HashMap<>();
+		claims.put("userId", user.getId().toString());
+		claims.put("email", user.getEmail());
+		claims.put("type", type);
+
 		return Jwts.builder()
 				.claims(claims)
-				.subject(userDetails.getUsername())
+				.id(UUID.randomUUID().toString())
+				.subject(user.getUsername())
 				.issuedAt(Date.from(now))
 				.expiration(Date.from(now.plusMillis(expirationMillis)))
 				.signWith(getSigningKey())
