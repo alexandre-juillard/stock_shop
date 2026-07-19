@@ -46,13 +46,15 @@ public class AuthenticationService {
 			throw new EmailAlreadyExistsException(request.email());
 		}
 
+		// NB : en l'absence de flux de confirmation d'email implémenté à ce jour,
+		// le compte est activé immédiatement à l'inscription (active = true).
 		User user = User.builder()
 				.email(request.email())
-				.password(passwordEncoder.encode(request.password()))
+				.passwordHash(passwordEncoder.encode(request.password()))
 				.firstName(request.firstName())
 				.lastName(request.lastName())
 				.role(Role.USER)
-				.enabled(true)
+				.active(true)
 				.build();
 		userRepository.save(user);
 

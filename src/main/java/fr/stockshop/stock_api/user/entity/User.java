@@ -3,6 +3,7 @@ package fr.stockshop.stock_api.user.entity;
 import java.time.Instant;
 import java.util.Collection;
 import java.util.List;
+import java.util.UUID;
 
 import org.hibernate.annotations.CreationTimestamp;
 import org.hibernate.annotations.UpdateTimestamp;
@@ -27,6 +28,10 @@ import lombok.Setter;
 /**
  * Utilisateur de l'application, également utilisé par Spring Security
  * comme {@link UserDetails} pour l'authentification.
+ *
+ * <p>Le mapping suit le schéma métier "Stock &amp; Shop" (PK UUID, confirmation
+ * d'email, comptes OAuth2...). La colonne {@code role} est une extension
+ * technique nécessaire à la gestion des permissions Spring Security.</p>
  */
 @Entity
 @Table(name = "users")
@@ -38,28 +43,55 @@ import lombok.Setter;
 public class User implements UserDetails {
 
 	@Id
-	@GeneratedValue(strategy = GenerationType.IDENTITY)
-	private Long id;
+	@GeneratedValue(strategy = GenerationType.UUID)
+	private UUID id;
 
 	@Column(nullable = false, unique = true, length = 255)
 	private String email;
 
-	@Column(nullable = false, length = 255)
-	private String password;
-
-	@Column(name = "first_name", length = 100)
+	@Column(name = "first_name", nullable = false, length = 100)
 	private String firstName;
 
-	@Column(name = "last_name", length = 100)
+	@Column(name = "last_name", nullable = false, length = 100)
 	private String lastName;
+
+	@Column(name = "password_hash", length = 255)
+	private String passwordHash;
+
+	@Column(name = "avatar_url", length = 500)
+	private String avatarUrl;
 
 	@Enumerated(EnumType.STRING)
 	@Column(nullable = false, length = 20)
-	private Role role;
-
-	@Column(nullable = false)
 	@Builder.Default
-	private boolean enabled = true;
+	private Role role = Role.USER;
+
+	@Column(name = "is_active", nullable = false)
+	@Builder.Default
+	private boolean active = false;
+
+	@Column(name = "email_confirmed_at")
+	private Instant emailConfirmedAt;
+
+	@Column(name = "confirmation_token_hash", length = 255)
+	private String confirmationTokenHash;
+
+	@Column(name = "confirmation_token_expires_at")
+	private Instant confirmationTokenExpiresAt;
+
+	@Column(name = "reset_token_hash", length = 255)
+	private String resetTokenHash;
+
+	@Column(name = "reset_token_expires_at")
+	private Instant resetTokenExpiresAt;
+
+	@Column(name = "expiration_alert_days", nullable = false)
+	@Builder.Default
+	private int expirationAlertDays = 3;
+
+	@Column(nullable = false, length = 10)
+	@Builder.Default
+	private String theme = "light";
 
 	@CreationTimestamp
 	@Column(name = "created_at", nullable = false, updatable = false)
@@ -80,6 +112,11 @@ public class User implements UserDetails {
 	}
 
 	@Override
+	public String getPassword() {
+		return passwordHash;
+	}
+
+	@Override
 	public boolean isAccountNonExpired() {
 		return true;
 	}
@@ -96,7 +133,7 @@ public class User implements UserDetails {
 
 	@Override
 	public boolean isEnabled() {
-		return enabled;
+		return active;
 	}
 }
 

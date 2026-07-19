@@ -136,6 +136,31 @@ Les tests d'intégration utilisent **Testcontainers** : Docker Desktop doit êtr
 | `test`  | `application-test.yml`        | Tests automatisés (Testcontainers, Flyway strict)   |
 | `prod`  | `application-prod.yml`        | Production (aucune valeur par défaut, logs réduits) |
 
+## Base de données & migrations Flyway
+
+Le schéma est entièrement versionné via **Flyway** (`src/main/resources/db/migration`) et appliqué automatiquement au démarrage de l'application. En cas d'échec d'une migration, le démarrage est bloqué et l'erreur SQL exacte est loguée.
+
+| Migration                                | Contenu                                                        |
+|-------------------------------------------|-----------------------------------------------------------------|
+| `V1__init_schema.sql`                     | Création de toutes les tables métier (users, produits, stock, recettes, listes de courses, unités de quantité, OAuth, sessions, push tokens...), contraintes, index. |
+| `V2__seed_quantity_data.sql`               | Données de seed des référentiels `quantity_types` / `quantity_units` (poids, liquide, unité). |
+| `V3__create_refresh_tokens_table.sql`      | Table technique pour la gestion des jetons de rafraîchissement JWT. |
+
+Principales tables : `users`, `oauth_accounts`, `oauth_link_decisions`, `user_sessions`, `push_tokens`, `quantity_types`, `quantity_units`, `categories`, `products`, `stock_items`, `shopping_list_items`, `recipes`, `recipe_ingredients`, `refresh_tokens`.
+
+Identifiants en `UUID`, timestamps en `TIMESTAMPTZ`, suppression en cascade documentée par table (voir commentaires dans les scripts SQL).
+
+## Endpoints d'authentification
+
+| Méthode | Endpoint              | Description                          |
+|---------|------------------------|---------------------------------------|
+| POST    | `/api/auth/register`   | Inscription (email + mot de passe)    |
+| POST    | `/api/auth/login`      | Connexion, retourne access + refresh token |
+| POST    | `/api/auth/refresh`    | Rotation du refresh token             |
+| POST    | `/api/auth/logout`     | Révocation du refresh token           |
+
+⚠️ La confirmation d'email et les comptes OAuth2 (colonnes déjà présentes en base) ne sont pas encore implémentés côté application.
+
 ## Structure du projet
 
 Le projet suit une organisation par domaine métier, chaque module (`category`, `product`, `recipe`, `stock`, `user`) contenant ses propres couches `controller`, `dto`, `entity`, `mapper`, `repository` et `service`.

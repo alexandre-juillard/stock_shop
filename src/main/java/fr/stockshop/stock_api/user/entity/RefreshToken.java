@@ -1,6 +1,7 @@
 package fr.stockshop.stock_api.user.entity;
 
 import java.time.Instant;
+import java.util.UUID;
 
 import org.hibernate.annotations.CreationTimestamp;
 
@@ -33,8 +34,8 @@ import lombok.Setter;
 public class RefreshToken {
 
 	@Id
-	@GeneratedValue(strategy = GenerationType.IDENTITY)
-	private Long id;
+	@GeneratedValue(strategy = GenerationType.UUID)
+	private UUID id;
 
 	@Column(nullable = false, unique = true, length = 512)
 	private String token;
