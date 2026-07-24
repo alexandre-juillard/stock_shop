@@ -3,9 +3,4 @@ package fr.stockshop.stock_api.user.dto;
 import jakarta.validation.constraints.NotBlank;
 
 public record RefreshTokenRequest(
-
-		@NotBlank(message = "Le refresh token est obligatoire")
-		String refreshToken
-) {
-}
-
+    @NotBlank(message = "Le refresh token est obligatoire") String refreshToken) {}
