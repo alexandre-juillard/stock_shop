@@ -10,8 +10,6 @@ import org.springframework.test.context.ActiveProfiles;
 @ActiveProfiles("test")
 class StockApiApplicationTests {
 
-	@Test
-	void contextLoads() {
-	}
-
+  @Test
+  void contextLoads() {}
 }
