@@ -32,6 +32,16 @@
 		<dependency-check.version>12.1.6</dependency-check.version>
 		<!-- Surchargée en CI via -Dnvd.api.key=... (secret GitHub Actions NVD_API_KEY) -->
 		<nvd.api.key/>
+
+		<!--
+			Surcharges de versions gérées par le BOM spring-boot-dependencies,
+			appliquées suite à des CVE remontées par OWASP Dependency-Check
+			(voir owasp-suppressions.xml pour les faux positifs documentés).
+		-->
+		<postgresql.version>42.7.13</postgresql.version> <!-- CVE-2026-54291 -->
+		<tomcat.version>11.0.24</tomcat.version> <!-- CVE-2026-53434 / 55276 / 59083 / 59084 / 53404 -->
+		<log4j2.version>2.25.5</log4j2.version> <!-- CVE-2026-49844 -->
+		<jackson-2-bom.version>2.21.5</jackson-2-bom.version> <!-- CVE-2026-54515 -->
 	</properties>
 	<dependencies>
 		<dependency>
@@ -65,7 +75,7 @@
 		<dependency>
 			<groupId>org.springdoc</groupId>
 			<artifactId>springdoc-openapi-starter-webmvc-ui</artifactId>
-			<version>3.0.2</version>
+			<version>3.0.3</version>
 		</dependency>
 		<dependency>
 			<groupId>io.jsonwebtoken</groupId>
