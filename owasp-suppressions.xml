@@ -30,6 +30,21 @@
         <cvssBelow>10</cvssBelow>
     </suppress>
 
+    <suppress>
+        <notes><![CDATA[
+        brace-expansion (transitif de commitizen -> cz-conventional-changelog -> glob ->
+        minimatch, presente dans package-lock.json) est une devDependency npm utilisee
+        uniquement pour l'outillage local de convention de commit (voir CONTRIBUTING.md :
+        husky / commitlint / commitizen). Elle n'est jamais publiee, ni embarquee dans le
+        jar Spring Boot, ni dans l'image Docker : aucun risque pour l'application livree.
+        Le plugin est deja configure avec nodeAuditSkipDevDependencies=true ; cette
+        suppression sert de filet de securite si un autre analyseur venait a la
+        remonter. Aucun correctif disponible en amont a ce jour (voir GHSA-mh99-v99m-4gvg).
+        ]]></notes>
+        <packageUrl regex="true">^pkg:npm/brace\-expansion@.*$</packageUrl>
+        <vulnerabilityName>GHSA-mh99-v99m-4gvg</vulnerabilityName>
+    </suppress>
+
     <!--
         Exemple pour une future suppression ponctuelle :
         <suppress>
@@ -42,4 +57,6 @@
         </suppress>
     -->
 </suppressions>
+
+
 
