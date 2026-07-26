@@ -10,9 +10,19 @@ on:
       - develop
       - main
 
+  # Analyse de vulnérabilités hebdomadaire, indépendamment de tout push/PR
+  # (de nouvelles CVE peuvent apparaître sur des dépendances déjà en place)
+  schedule:
+    - cron: "0 6 * * 1" # tous les lundis à 06h00 UTC
+
+  # Permet de déclencher manuellement le workflow (ex: pour lancer le scan à la demande)
+  workflow_dispatch:
+
 jobs:
   build:
     runs-on: ubuntu-latest
+    # Ce job ne concerne que le code : inutile de le relancer sur le déclenchement planifié
+    if: github.event_name != 'schedule'
 
     steps:
       - name: Checkout repository
@@ -27,3 +37,46 @@ jobs:
 
       - name: Build project
         run: mvn clean verify
+
+  dependency-check:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Java 25
+        uses: actions/setup-java@v4
+        with:
+            distribution: temurin
+            java-version: "25"
+            cache: maven
+
+      - name: Get current week number
+        id: date
+        run: echo "week=$(date +'%Y-%U')" >> "$GITHUB_OUTPUT"
+
+      - name: Cache OWASP Dependency-Check NVD database
+        uses: actions/cache@v4
+        with:
+          path: ~/.m2/repository/org/owasp/dependency-check-data
+          # La base NVD évolue quotidiennement, on invalide donc le cache chaque semaine
+          key: owasp-dependency-check-nvd-${{ steps.date.outputs.week }}
+          restore-keys: |
+            owasp-dependency-check-nvd-
+
+      - name: OWASP Dependency Check
+        env:
+          NVD_API_KEY: ${{ secrets.NVD_API_KEY }}
+        run: >
+          mvn org.owasp:dependency-check-maven:check
+          -Powasp-check
+          -Dnvd.api.key="${NVD_API_KEY}"
+
+      - name: Upload Dependency-Check report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: dependency-check-report
+          path: target/dependency-check-report.html
+          retention-days: 30

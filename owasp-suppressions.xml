@@ -1,0 +1,21 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<suppressions xmlns="https://jeremylong.github.io/DependencyCheck/dependency-suppression.1.3.xsd">
+    <!--
+        Fichier de suppressions pour OWASP Dependency-Check.
+
+        Fichier pour ignorer des faux positifs ou des CVE jugées non
+        applicables/acceptées après analyse, plutôt que de baisser le seuil global
+        failBuildOnCVSS.
+
+        Exemple :
+        <suppress>
+           <notes><![CDATA[
+           Faux positif : la CVE concerne un usage non présent dans notre code
+           (ex: fonctionnalité XML externe désactivée). Voir ticket JIRA-123.
+           ]]></notes>
+           <packageUrl regex="true">^pkg:maven/com\.example/some-lib@.*$</packageUrl>
+           <cve>CVE-2023-12345</cve>
+        </suppress>
+    -->
+</suppressions>
+

@@ -29,6 +29,9 @@
 	<properties>
 		<java.version>25</java.version>
 		<testcontainers.version>1.21.3</testcontainers.version>
+		<dependency-check.version>12.1.6</dependency-check.version>
+		<!-- Surchargée en CI via -Dnvd.api.key=... (secret GitHub Actions NVD_API_KEY) -->
+		<nvd.api.key/>
 	</properties>
 	<dependencies>
 		<dependency>
@@ -280,5 +283,40 @@
 			</plugin>
 		</plugins>
 	</build>
+
+	<profiles>
+		<!--
+			Profil dédié à l'analyse de vulnérabilités OWASP Dependency-Check.
+			Séparé du build "verify" par défaut (téléchargement de la base
+			NVD, temps d'exécution long) : à activer explicitement, typiquement en CI, via
+			`mvn org.owasp:dependency-check-maven:check -Powasp-check -Dnvd.api.key=...`
+		-->
+		<profile>
+			<id>owasp-check</id>
+			<build>
+				<plugins>
+					<plugin>
+						<groupId>org.owasp</groupId>
+						<artifactId>dependency-check-maven</artifactId>
+						<version>${dependency-check.version}</version>
+						<configuration>
+							<formats>
+								<format>HTML</format>
+								<format>JSON</format>
+							</formats>
+							<!-- Échec du build si une CVE de sévérité >= 7 (High/Critical) est détectée -->
+							<failBuildOnCVSS>7</failBuildOnCVSS>
+							<suppressionFiles>
+								<suppressionFile>${project.basedir}/owasp-suppressions.xml</suppressionFile>
+							</suppressionFiles>
+							<nvdApiKey>${nvd.api.key}</nvdApiKey>
+							<!-- Chemin stable pour permettre la mise en cache de la base NVD en CI -->
+							<dataDirectory>${user.home}/.m2/repository/org/owasp/dependency-check-data</dataDirectory>
+						</configuration>
+					</plugin>
+				</plugins>
+			</build>
+		</profile>
+	</profiles>
 
 </project>
