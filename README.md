@@ -161,6 +161,10 @@ Identifiants en `UUID`, timestamps en `TIMESTAMPTZ`, suppression en cascade docu
 
 ⚠️ La confirmation d'email et les comptes OAuth2 (colonnes déjà présentes en base) ne sont pas encore implémentés côté application.
 
+## Contribuer
+
+Ce projet impose une convention de commit stricte (`[REF-JIRA]type: message`), vérifiée automatiquement via des hooks Git (Husky + Commitlint) et une invite interactive (Commitizen). Voir [CONTRIBUTING.md](./CONTRIBUTING.md) pour la mise en place et l'utilisation.
+
 ## Structure du projet
 
 Le projet suit une organisation par domaine métier, chaque module (`category`, `product`, `recipe`, `stock`, `user`) contenant ses propres couches `controller`, `dto`, `entity`, `mapper`, `repository` et `service`.
