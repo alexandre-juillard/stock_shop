@@ -33,3 +33,7 @@ build/
 
 ### VS Code ###
 .vscode/
+
+### Node / outillage commits (husky, commitlint, commitizen) ###
+node_modules/
+
