@@ -19,6 +19,21 @@ on:
   workflow_dispatch:
 
 jobs:
+  commitlint:
+    runs-on: ubuntu-latest
+    # Filet de securite : ne s'applique qu'aux Pull Requests (les hooks Husky
+    # locaux valident deja chaque commit au moment de sa creation/push)
+    if: github.event_name == 'pull_request'
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Lint commit messages
+        uses: wagoid/commitlint-github-action@v6
+
   build:
     runs-on: ubuntu-latest
     # Ce job ne concerne que le code : inutile de le relancer sur le déclenchement planifié
