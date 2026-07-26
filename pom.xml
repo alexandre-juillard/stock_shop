@@ -322,6 +322,16 @@
 							<nvdApiKey>${nvd.api.key}</nvdApiKey>
 							<!-- Chemin stable pour permettre la mise en cache de la base NVD en CI -->
 							<dataDirectory>${user.home}/.m2/repository/org/owasp/dependency-check-data</dataDirectory>
+
+							<!--
+								package.json / package-lock.json ne contiennent que de l'outillage de
+								dev (Husky, Commitlint, Commitizen) pour la convention de commit :
+								jamais publiees, jamais embarquees dans le jar ni l'image Docker.
+								On ignore donc les devDependencies npm pour ne pas faire echouer le
+								scan sur des CVE sans aucun impact reel sur l'application livree.
+							-->
+							<nodeAuditSkipDevDependencies>true</nodeAuditSkipDevDependencies>
+							<nodePackageSkipDevDependencies>true</nodePackageSkipDevDependencies>
 						</configuration>
 					</plugin>
 				</plugins>
