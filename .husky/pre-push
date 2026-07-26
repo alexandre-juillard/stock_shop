@@ -18,23 +18,23 @@ while read local_ref local_sha remote_ref remote_sha; do
 
   if [ "$remote_sha" != "$zero" ]; then
     # Branche deja poussee : on ne verifie que les nouveaux commits
-    range="$remote_sha..$local_sha"
+    from_ref="$remote_sha"
   else
     # Premier push de cette branche : on cherche le point de divergence avec develop
-    base=$(git merge-base "$local_sha" "origin/$default_branch" 2>/dev/null)
-    if [ -n "$base" ]; then
-      range="$base..$local_sha"
-    else
+    from_ref=$(git merge-base "$local_sha" "origin/$default_branch" 2>/dev/null)
+    if [ -z "$from_ref" ]; then
       # Pas de base commune (ex: origin/develop non recupere localement) :
       # on se limite au dernier commit par securite plutot que de bloquer.
-      range="$local_sha~1..$local_sha"
+      from_ref="$local_sha~1"
     fi
   fi
 
-  npx --no -- commitlint --from "$range" || exit 1
+  npx --no -- commitlint --from "$from_ref" --to "$local_sha" || exit 1
 done
 
 exit 0
+
+
 
 
 
