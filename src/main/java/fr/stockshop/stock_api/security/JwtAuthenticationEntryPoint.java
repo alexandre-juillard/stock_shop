@@ -7,6 +7,8 @@ import fr.stockshop.stock_api.exception.ApiError;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
 import java.io.IOException;
+import java.time.Instant;
+import java.util.Map;
 import org.springframework.http.MediaType;
 import org.springframework.security.core.AuthenticationException;
 import org.springframework.security.web.AuthenticationEntryPoint;
@@ -35,10 +37,12 @@ public class JwtAuthenticationEntryPoint implements AuthenticationEntryPoint {
 
     ApiError error =
         new ApiError(
+            Instant.now(),
             HttpServletResponse.SC_UNAUTHORIZED,
             "Unauthorized",
             "Authentification requise ou token invalide/expiré",
-            request.getRequestURI());
+            request.getRequestURI(),
+            Map.of());
     objectMapper.writeValue(response.getWriter(), error);
   }
 }

@@ -1,6 +1,7 @@
 package fr.stockshop.stock_api.exception;
 
 import jakarta.servlet.http.HttpServletRequest;
+import java.time.Instant;
 import java.util.HashMap;
 import java.util.Map;
 import org.springframework.http.HttpStatus;
@@ -22,10 +23,12 @@ public class GlobalExceptionHandler {
   public ResponseEntity<ApiError> handleApiException(ApiException ex, HttpServletRequest request) {
     ApiError error =
         new ApiError(
+            Instant.now(),
             ex.getStatus(),
             HttpStatus.valueOf(ex.getStatus()).getReasonPhrase(),
             ex.getMessage(),
-            request.getRequestURI());
+            request.getRequestURI(),
+            Map.of());
     return ResponseEntity.status(ex.getStatus()).body(error);
   }
 
@@ -38,6 +41,7 @@ public class GlobalExceptionHandler {
         .forEach(fe -> fieldErrors.put(fe.getField(), fe.getDefaultMessage()));
     ApiError error =
         new ApiError(
+            Instant.now(),
             HttpStatus.BAD_REQUEST.value(),
             "Bad Request",
             "Erreur de validation des données",
@@ -51,10 +55,12 @@ public class GlobalExceptionHandler {
       RuntimeException ex, HttpServletRequest request) {
     ApiError error =
         new ApiError(
+            Instant.now(),
             HttpStatus.UNAUTHORIZED.value(),
             "Unauthorized",
             "Email ou mot de passe incorrect",
-            request.getRequestURI());
+            request.getRequestURI(),
+            Map.of());
     return ResponseEntity.status(HttpStatus.UNAUTHORIZED).body(error);
   }
 
@@ -63,7 +69,12 @@ public class GlobalExceptionHandler {
       AccessDeniedException ex, HttpServletRequest request) {
     ApiError error =
         new ApiError(
-            HttpStatus.FORBIDDEN.value(), "Forbidden", "Accès refusé", request.getRequestURI());
+            Instant.now(),
+            HttpStatus.FORBIDDEN.value(),
+            "Forbidden",
+            "Accès refusé",
+            request.getRequestURI(),
+            Map.of());
     return ResponseEntity.status(HttpStatus.FORBIDDEN).body(error);
   }
 
@@ -72,7 +83,12 @@ public class GlobalExceptionHandler {
       Exception ex, HttpServletRequest request) {
     ApiError error =
         new ApiError(
-            HttpStatus.NOT_FOUND.value(), "Not Found", ex.getMessage(), request.getRequestURI());
+            Instant.now(),
+            HttpStatus.NOT_FOUND.value(),
+            "Not Found",
+            ex.getMessage(),
+            request.getRequestURI(),
+            Map.of());
     return ResponseEntity.status(HttpStatus.NOT_FOUND).body(error);
   }
 
@@ -80,10 +96,12 @@ public class GlobalExceptionHandler {
   public ResponseEntity<ApiError> handleGenericException(Exception ex, HttpServletRequest request) {
     ApiError error =
         new ApiError(
+            Instant.now(),
             HttpStatus.INTERNAL_SERVER_ERROR.value(),
             "Internal Server Error",
             "Une erreur inattendue est survenue",
-            request.getRequestURI());
+            request.getRequestURI(),
+            Map.of());
     return ResponseEntity.internalServerError().body(error);
   }
 }

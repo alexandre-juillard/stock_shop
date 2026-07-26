@@ -11,12 +11,9 @@ public record ApiError(
     String message,
     String path,
     Map<String, String> fieldErrors) {
-  public ApiError(int status, String error, String message, String path) {
-    this(Instant.now(), status, error, message, path, null);
-  }
-
-  public ApiError(
-      int status, String error, String message, String path, Map<String, String> fieldErrors) {
-    this(Instant.now(), status, error, message, path, fieldErrors);
+  // Constructeur compact : copie défensive à la création
+  public ApiError {
+    fieldErrors =
+        fieldErrors == null ? Map.of() : Map.copyOf(fieldErrors); // immuable + copie défensive
   }
 }

@@ -130,10 +130,19 @@ class JwtSecurityIntegrationTest {
     String email = "tampered-" + UUID.randomUUID() + "@test.fr";
     String accessToken = registerAndLogin(email);
 
-    // On altère le dernier caractère de la signature pour la rendre invalide.
+    // On altère un caractère au milieu de la signature (dernier segment après le dernier '.')
+    // plutôt que le dernier caractère, qui peut correspondre à des bits de bourrage Base64URL
+    // ignorés au décodage et donc ne pas produire de signature réellement différente.
+    int lastDot = accessToken.lastIndexOf('.');
+    int signatureMiddle = lastDot + 1 + (accessToken.length() - lastDot - 1) / 2;
+
+    char original = accessToken.charAt(signatureMiddle);
+    char replacement = original == 'A' ? 'B' : 'A';
+
     String tampered =
-        accessToken.substring(0, accessToken.length() - 1)
-            + (accessToken.charAt(accessToken.length() - 1) == 'A' ? 'B' : 'A');
+        accessToken.substring(0, signatureMiddle)
+            + replacement
+            + accessToken.substring(signatureMiddle + 1);
 
     mockMvc
         .perform(

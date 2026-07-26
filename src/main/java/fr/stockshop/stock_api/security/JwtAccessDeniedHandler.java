@@ -7,6 +7,8 @@ import fr.stockshop.stock_api.exception.ApiError;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
 import java.io.IOException;
+import java.time.Instant;
+import java.util.Map;
 import org.springframework.http.MediaType;
 import org.springframework.security.access.AccessDeniedException;
 import org.springframework.security.web.access.AccessDeniedHandler;
@@ -35,10 +37,12 @@ public class JwtAccessDeniedHandler implements AccessDeniedHandler {
 
     ApiError error =
         new ApiError(
+            Instant.now(),
             HttpServletResponse.SC_FORBIDDEN,
             "Forbidden",
             "Vous n'avez pas les droits nécessaires pour accéder à cette ressource",
-            request.getRequestURI());
+            request.getRequestURI(),
+            Map.of());
     objectMapper.writeValue(response.getWriter(), error);
   }
 }
