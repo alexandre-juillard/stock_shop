@@ -1,0 +1,9 @@
+# Fichier de suppression Trivy (équivalent de owasp-suppressions.xml pour le scan
+# de l'image Docker). Une ligne par CVE/GHSA ignorée, avec une justification
+# obligatoire en commentaire juste au-dessus.
+#
+# Exemple :
+# Faux positif : la CVE concerne un binaire non present/non utilise dans notre
+# image runtime (stage "runtime" du Dockerfile). Voir ticket JIRA-123.
+# CVE-2023-12345
+
