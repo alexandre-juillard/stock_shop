@@ -134,27 +134,50 @@ jobs:
 
       # Scanne l'image finale (stage "runtime") : OS Alpine + paquets système,
       # en complément du scan OWASP qui ne couvre que les dépendances Maven/npm.
-      # ignore-unfixed=true : on ne bloque le build que sur des failles pour
-      # lesquelles un correctif existe déjà (bloquer sur du non-corrigible dans
-      # l'image de base serait un blocage sans action possible).
-      - name: Scan Docker image with Trivy
+      # Génère d'abord le rapport SARIF (exit-code 0 : ne bloque jamais cette
+      # étape) afin qu'il soit toujours disponible pour l'upload suivant,
+      # même si le scan de blocage plus bas échoue.
+      - name: Scan Docker image with Trivy (rapport SARIF)
         uses: aquasecurity/trivy-action@v0.36.0
         with:
           image-ref: stock-api:${{ github.sha }}
           format: sarif
           output: trivy-results.sarif
+          # On limite volontairement ce job aux CVE (OS + dépendances) : le
+          # scan de secrets est un sujet distinct (analyse du code source dans
+          # son ensemble, pas de l'image runtime buildée) et gérerait mal les
+          # faux positifs sur des valeurs par défaut de dev (voir application-dev.yml).
+          scanners: "vuln"
           severity: CRITICAL,HIGH
           ignore-unfixed: true
-          exit-code: "1"
+          exit-code: "0"
+          skip-version-check: true
 
       # Publie le rapport dans l'onglet "Security > Code scanning" du repo.
       # continue-on-error : sur un repo privé sans GitHub Advanced Security,
       # cet upload peut être refusé par GitHub ; cela ne doit pas invalider
-      # le scan Trivy lui-même (déjà appliqué par l'étape précédente).
+      # le scan Trivy lui-même.
       - name: Upload Trivy scan results to GitHub Security tab
         if: always()
         continue-on-error: true
         uses: github/codeql-action/upload-sarif@v3
         with:
           sarif_file: trivy-results.sarif
+
+      # Rejoue le scan en affichant un tableau lisible directement dans les logs
+      # (le format sarif ci-dessus n'affiche rien en console) et fait échouer le
+      # job si une CVE CRITICAL/HIGH corrigible est trouvée. ignore-unfixed=true :
+      # on ne bloque que sur des failles pour lesquelles un correctif existe déjà
+      # (bloquer sur du non-corrigible dans l'image de base serait un blocage
+      # sans action possible).
+      - name: Scan Docker image with Trivy (gate)
+        uses: aquasecurity/trivy-action@v0.36.0
+        with:
+          image-ref: stock-api:${{ github.sha }}
+          format: table
+          scanners: "vuln"
+          severity: CRITICAL,HIGH
+          ignore-unfixed: true
+          exit-code: "1"
+          skip-version-check: true
 
