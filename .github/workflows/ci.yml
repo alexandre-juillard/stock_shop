@@ -53,6 +53,38 @@ jobs:
       - name: Build project
         run: mvn clean verify
 
+      # if: always() -> le rapport JaCoCo est généré en phase "verify", après
+      # Spotless/SpotBugs : on veut pouvoir le consulter même si un de ces
+      # checks échoue (les tests ont déjà tourné avant). Si le fichier
+      # n'existe pas (échec très en amont), l'étape avertit sans faire échouer le job.
+      - name: Upload JaCoCo coverage report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: jacoco-report
+          path: target/site/jacoco/
+          retention-days: 30
+
+      - name: Upload SpotBugs report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: spotbugs-report
+          path: target/spotbugsXml.xml
+          retention-days: 30
+
+      # Uniquement si le build a réussi : le jar final (on exclut le
+      # ".jar.original" laissé par le plugin Spring Boot avant repackaging).
+      - name: Upload application JAR
+        if: success()
+        uses: actions/upload-artifact@v4
+        with:
+          name: stock-api-jar
+          path: |
+            target/*.jar
+            !target/*.jar.original
+          retention-days: 30
+
   dependency-check:
     runs-on: ubuntu-latest
 
