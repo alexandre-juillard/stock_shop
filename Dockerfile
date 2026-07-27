@@ -17,6 +17,11 @@ RUN ./mvnw clean package -DskipTests -B \
 # ---------- Stage 2 : runtime ----------
 FROM eclipse-temurin:25-jre-alpine AS runtime
 
+# Applique les derniers correctifs de sécurité des paquets système Alpine
+# (indépendant de la fraîcheur exacte du tag de l'image de base au moment
+# du pull ; corrige les CVE OS détectées par le scan Trivy en CI)
+RUN apk update && apk upgrade --no-cache
+
 # Utilisateur non-root
 RUN addgroup -S spring && adduser -S spring -G spring
 WORKDIR /app

@@ -95,3 +95,66 @@ jobs:
           name: dependency-check-report
           path: target/dependency-check-report.html
           retention-days: 30
+
+  docker-build:
+    runs-on: ubuntu-latest
+    # Ce job construit et scanne l'image de production : inutile sur le
+    # déclenchement planifié (le contenu du Dockerfile n'a pas changé)
+    if: github.event_name != 'schedule'
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Build Docker image
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          push: false
+          load: true
+          tags: stock-api:${{ github.sha }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      - name: Get current week number
+        id: date
+        run: echo "week=$(date +'%Y-%U')" >> "$GITHUB_OUTPUT"
+
+      - name: Cache Trivy vulnerability database
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/trivy
+          # La base Trivy évolue quotidiennement, on invalide donc le cache chaque semaine
+          key: trivy-db-${{ steps.date.outputs.week }}
+          restore-keys: |
+            trivy-db-
+
+      # Scanne l'image finale (stage "runtime") : OS Alpine + paquets système,
+      # en complément du scan OWASP qui ne couvre que les dépendances Maven/npm.
+      # ignore-unfixed=true : on ne bloque le build que sur des failles pour
+      # lesquelles un correctif existe déjà (bloquer sur du non-corrigible dans
+      # l'image de base serait un blocage sans action possible).
+      - name: Scan Docker image with Trivy
+        uses: aquasecurity/trivy-action@v0.36.0
+        with:
+          image-ref: stock-api:${{ github.sha }}
+          format: sarif
+          output: trivy-results.sarif
+          severity: CRITICAL,HIGH
+          ignore-unfixed: true
+          exit-code: "1"
+
+      # Publie le rapport dans l'onglet "Security > Code scanning" du repo.
+      # continue-on-error : sur un repo privé sans GitHub Advanced Security,
+      # cet upload peut être refusé par GitHub ; cela ne doit pas invalider
+      # le scan Trivy lui-même (déjà appliqué par l'étape précédente).
+      - name: Upload Trivy scan results to GitHub Security tab
+        if: always()
+        continue-on-error: true
+        uses: github/codeql-action/upload-sarif@v3
+        with:
+          sarif_file: trivy-results.sarif
+
