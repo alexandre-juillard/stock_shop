@@ -40,9 +40,8 @@ management:
     health:
       show-details: when-authorized
   health:
-    # Le health indicator Mail teste une connexion SMTP à chaque appel de /actuator/health.
-    # L'envoi d'email étant asynchrone et ses échecs déjà gérés sans impact utilisateur (AC-3),
-    # un SMTP momentanément indisponible ne doit pas faire passer l'application en DOWN.
+    # SMTP indisponible = email non envoyé (déjà géré côté service, sans erreur pour l'appelant),
+    # pas une panne de l'application : ce health check ne doit donc pas faire passer /actuator/health en DOWN.
     mail:
       enabled: false
 
