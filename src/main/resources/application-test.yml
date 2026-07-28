@@ -5,6 +5,21 @@ spring:
     show-sql: false
   flyway:
     enabled: true
+  # Port 3025 = port par défaut du serveur SMTP en mémoire GreenMail (ServerSetupTest.SMTP),
+  # utilisé par EmailServiceTest. Les autres tests n'envoient pas d'email : ces valeurs ne servent
+  # qu'à permettre le démarrage du contexte Spring (le bean JavaMailSender est créé mais jamais
+  # sollicité en dehors de EmailServiceTest). Aucun username/password : JavaMailSenderImpl
+  # tenterait sinon une connexion SMTP authentifiée, que GreenMail (sans utilisateur configuré)
+  # rejetterait.
+  mail:
+    host: ${SMTP_HOST:localhost}
+    port: ${SMTP_PORT:3025}
+    properties:
+      mail:
+        smtp:
+          auth: false
+          starttls:
+            enable: false
 
 # Secret de test UNIQUEMENT, jamais utilisé en dehors de l'environnement de test.
 security:
@@ -16,6 +31,12 @@ security:
 springdoc:
   api-docs:
     enabled: false
+
+app:
+  mail:
+    from: ${MAIL_FROM:no-reply@stockshop.fr}
+  frontend:
+    base-url: ${FRONTEND_BASE_URL:http://localhost:3000}
 
 logging:
   level:

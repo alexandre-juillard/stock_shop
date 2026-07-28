@@ -5,6 +5,12 @@ spring:
     password: ${DB_PASSWORD}
   jpa:
     show-sql: false
+  # Aucune valeur par défaut : ces variables doivent impérativement être fournies par
+  # l'environnement en production (mêmes exigences que JWT_SECRET ci-dessous).
+  mail:
+    host: ${SMTP_HOST}
+    username: ${SMTP_USER}
+    password: ${SMTP_PASSWORD}
 
 # Aucune valeur par défaut : JWT_SECRET doit impérativement être fourni par l'environnement
 # (secret aléatoire d'au moins 64 octets, encodé en base64). L'application refuse de démarrer sinon.
@@ -28,6 +34,10 @@ springdoc:
     enabled: ${SPRINGDOC_ENABLED:false}
   swagger-ui:
     enabled: ${SPRINGDOC_ENABLED:false}
+
+app:
+  mail:
+    from: ${MAIL_FROM}
 
 logging:
   level:

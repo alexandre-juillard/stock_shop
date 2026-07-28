@@ -8,6 +8,22 @@ spring:
     properties:
       hibernate:
         format_sql: true
+  # En local, pointe par défaut vers Mailpit (voir docker-compose.yaml) : un serveur SMTP de
+  # développement sans authentification, avec une interface web de consultation des emails reçus
+  # (http://localhost:8025). Aucun compte SMTP réel n'est nécessaire pour tester l'envoi d'email.
+  mail:
+    host: ${SMTP_HOST:localhost}
+    port: ${SMTP_PORT:1025}
+    properties:
+      mail:
+        smtp:
+          auth: ${SMTP_AUTH:false}
+          starttls:
+            enable: ${SMTP_STARTTLS:false}
+
+app:
+  mail:
+    from: ${MAIL_FROM:no-reply@stockshop.fr}
 
 # Secret de développement UNIQUEMENT (64 octets encodés en base64).
 # Ne jamais réutiliser cette valeur en production : définir JWT_SECRET dans l'environnement.

@@ -40,8 +40,28 @@ services:
       JWT_SECRET: ${JWT_SECRET}
       JWT_ACCESS_TOKEN_EXPIRATION: ${JWT_ACCESS_TOKEN_EXPIRATION:-900000}
       JWT_REFRESH_TOKEN_EXPIRATION: ${JWT_REFRESH_TOKEN_EXPIRATION:-604800000}
+      # A l'intérieur du réseau Docker, Mailpit est joignable via le nom de service "mailpit"
+      SMTP_HOST: ${SMTP_HOST:-mailpit}
+      SMTP_PORT: ${SMTP_PORT:-1025}
+      SMTP_USER: ${SMTP_USER:-}
+      SMTP_PASSWORD: ${SMTP_PASSWORD:-}
+      SMTP_AUTH: ${SMTP_AUTH:-false}
+      SMTP_STARTTLS: ${SMTP_STARTTLS:-false}
+      MAIL_FROM: ${MAIL_FROM:-no-reply@stockshop.fr}
+      TOKEN_EXPIRATION: ${TOKEN_EXPIRATION:-24h}
+      FRONTEND_BASE_URL: ${FRONTEND_BASE_URL:-http://localhost:3000}
     ports:
       - "${SERVER_PORT:-8080}:8080"
+    networks:
+      - stock-api-network
+
+  mailpit:
+    image: axllent/mailpit:latest
+    container_name: stock-api-mailpit
+    restart: unless-stopped
+    ports:
+      - "${MAILPIT_SMTP_PORT:-1025}:1025" # Serveur SMTP (utilisé par l'API)
+      - "${MAILPIT_UI_PORT:-8025}:8025" # Interface web de consultation des emails reçus
     networks:
       - stock-api-network
 
