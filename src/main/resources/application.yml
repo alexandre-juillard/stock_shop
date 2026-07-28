@@ -13,6 +13,21 @@ spring:
     enabled: true
     locations: classpath:db/migration
 
+  mail:
+    host: ${SMTP_HOST}
+    port: ${SMTP_PORT:587}
+    username: ${SMTP_USER:}
+    password: ${SMTP_PASSWORD:}
+    properties:
+      mail:
+        smtp:
+          auth: ${SMTP_AUTH:true}
+          starttls:
+            enable: ${SMTP_STARTTLS:true}
+          connectiontimeout: 5000
+          timeout: 5000
+          writetimeout: 5000
+
 server:
   port: ${SERVER_PORT:8080}
 
@@ -24,12 +39,28 @@ management:
   endpoint:
     health:
       show-details: when-authorized
+  health:
+    # Le health indicator Mail teste une connexion SMTP à chaque appel de /actuator/health.
+    # L'envoi d'email étant asynchrone et ses échecs déjà gérés sans impact utilisateur (AC-3),
+    # un SMTP momentanément indisponible ne doit pas faire passer l'application en DOWN.
+    mail:
+      enabled: false
 
 security:
   jwt:
     secret: ${JWT_SECRET}
     access-token-expiration: ${JWT_ACCESS_TOKEN_EXPIRATION:900000}
     refresh-token-expiration: ${JWT_REFRESH_TOKEN_EXPIRATION:604800000}
+
+app:
+  mail:
+    from: ${MAIL_FROM}
+    # Durée de validité des jetons de confirmation de compte / réinitialisation de mot de passe
+    # (format Duration Spring Boot : "24h", "PT24H", "30m"...).
+    token-expiration: ${TOKEN_EXPIRATION:24h}
+  frontend:
+    # Base URL de l'application front (utilisée pour construire les liens envoyés par email).
+    base-url: ${FRONTEND_BASE_URL:http://localhost:3000}
 
 springdoc:
   api-docs:

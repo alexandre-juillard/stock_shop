@@ -1,0 +1,55 @@
+<!DOCTYPE html>
+<html xmlns:th="http://www.thymeleaf.org" lang="fr">
+  <head>
+    <meta charset="UTF-8" />
+    <title>Confirmez votre compte</title>
+  </head>
+  <body style="font-family: Arial, sans-serif; background-color: #f4f4f7; margin: 0; padding: 0">
+    <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="padding: 24px 0">
+      <tr>
+        <td align="center">
+          <table
+            role="presentation"
+            width="480"
+            cellpadding="0"
+            cellspacing="0"
+            style="background-color: #ffffff; border-radius: 8px; padding: 32px"
+          >
+            <tr>
+              <td>
+                <h1 style="color: #1f2937; font-size: 20px; margin-top: 0">
+                  Bienvenue <span th:text="${firstName}">Prénom</span> !
+                </h1>
+                <p style="color: #4b5563; font-size: 14px; line-height: 1.5">
+                  Merci de vous être inscrit sur Stock &amp; Shop. Confirmez votre adresse email en
+                  cliquant sur le bouton ci-dessous :
+                </p>
+                <p style="text-align: center; margin: 32px 0">
+                  <a
+                    th:href="${confirmationLink}"
+                    style="
+                      background-color: #2563eb;
+                      color: #ffffff;
+                      text-decoration: none;
+                      padding: 12px 24px;
+                      border-radius: 6px;
+                      font-size: 14px;
+                      display: inline-block;
+                    "
+                  >
+                    Confirmer mon compte
+                  </a>
+                </p>
+                <p style="color: #6b7280; font-size: 12px">
+                  Ce lien expire dans <span th:text="${expirationHours}">24</span> heures. Si vous
+                  n'êtes pas à l'origine de cette inscription, vous pouvez ignorer cet email.
+                </p>
+              </td>
+            </tr>
+          </table>
+        </td>
+      </tr>
+    </table>
+  </body>
+</html>
+

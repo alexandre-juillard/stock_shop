@@ -29,6 +29,7 @@
 	<properties>
 		<java.version>25</java.version>
 		<testcontainers.version>1.21.3</testcontainers.version>
+		<greenmail.version>2.1.3</greenmail.version>
 		<dependency-check.version>12.1.6</dependency-check.version>
 		<!-- Surchargée en CI via -Dnvd.api.key=... (secret GitHub Actions NVD_API_KEY) -->
 		<nvd.api.key/>
@@ -69,6 +70,14 @@
 			<artifactId>spring-boot-starter-webmvc</artifactId>
 		</dependency>
 		<dependency>
+			<groupId>org.springframework.boot</groupId>
+			<artifactId>spring-boot-starter-mail</artifactId>
+		</dependency>
+		<dependency>
+			<groupId>org.springframework.boot</groupId>
+			<artifactId>spring-boot-starter-thymeleaf</artifactId>
+		</dependency>
+		<dependency>
 			<groupId>org.flywaydb</groupId>
 			<artifactId>flyway-database-postgresql</artifactId>
 		</dependency>
@@ -93,6 +102,12 @@
 			<artifactId>jjwt-jackson</artifactId>
 			<version>0.12.6</version>
 			<scope>runtime</scope>
+		</dependency>
+		<dependency>
+			<groupId>com.github.spotbugs</groupId>
+			<artifactId>spotbugs-annotations</artifactId>
+			<version>4.10.3</version>
+			<scope>provided</scope>
 		</dependency>
 
 		<dependency>
@@ -166,6 +181,13 @@
 			<groupId>org.testcontainers</groupId>
 			<artifactId>postgresql</artifactId>
 			<version>${testcontainers.version}</version>
+			<scope>test</scope>
+		</dependency>
+		<dependency>
+			<!-- Serveur SMTP en mémoire utilisé pour tester EmailService sans dépendance externe -->
+			<groupId>com.icegreen</groupId>
+			<artifactId>greenmail-junit5</artifactId>
+			<version>${greenmail.version}</version>
 			<scope>test</scope>
 		</dependency>
 	</dependencies>
