@@ -4,7 +4,7 @@ import org.springframework.http.HttpStatus;
 
 public class InvalidTokenException extends ApiException {
 
-  public InvalidTokenException(String message) {
-    super(HttpStatus.UNAUTHORIZED.value(), message);
+  public InvalidTokenException(String messageCode) {
+    super(HttpStatus.UNAUTHORIZED.value(), messageCode);
   }
 }

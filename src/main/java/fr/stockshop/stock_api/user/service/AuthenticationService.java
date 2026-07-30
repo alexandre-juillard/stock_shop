@@ -26,6 +26,7 @@ import java.time.Duration;
 import java.time.Instant;
 import lombok.RequiredArgsConstructor;
 import org.springframework.beans.factory.annotation.Value;
+import org.springframework.context.i18n.LocaleContextHolder;
 import org.springframework.security.authentication.AuthenticationManager;
 import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
 import org.springframework.security.core.userdetails.UsernameNotFoundException;
@@ -71,6 +72,7 @@ public class AuthenticationService {
             .active(false)
             .confirmationTokenHash(tokenService.hashToken(rawConfirmationToken))
             .confirmationTokenExpiresAt(Instant.now().plus(confirmationTokenExpiration))
+            .preferredLocale(LocaleContextHolder.getLocale().getLanguage())
             .build();
     userRepository.save(user);
 
@@ -85,11 +87,11 @@ public class AuthenticationService {
     User user =
         userRepository
             .findByConfirmationTokenHash(tokenHash)
-            .orElseThrow(() -> new TokenNotFoundException("Token de confirmation introuvable"));
+            .orElseThrow(TokenNotFoundException::new);
 
     if (user.getConfirmationTokenExpiresAt() == null
         || user.getConfirmationTokenExpiresAt().isBefore(Instant.now())) {
-      throw new TokenExpiredException("Token de confirmation expiré");
+      throw new TokenExpiredException();
     }
 
     user.setActive(true);
@@ -104,8 +106,7 @@ public class AuthenticationService {
     User user =
         userRepository
             .findByEmail(request.email())
-            .orElseThrow(
-                () -> new UserNotFoundException("Utilisateur introuvable : " + request.email()));
+            .orElseThrow(() -> new UserNotFoundException(request.email()));
 
     if (user.isActive()) {
       throw new AccountAlreadyActiveException(request.email());
@@ -138,10 +139,10 @@ public class AuthenticationService {
     RefreshToken storedToken =
         refreshTokenRepository
             .findByToken(request.refreshToken())
-            .orElseThrow(() -> new InvalidTokenException("Refresh token invalide"));
+            .orElseThrow(() -> new InvalidTokenException("error.token.refreshInvalid"));
 
     if (storedToken.isRevoked() || storedToken.getExpiryDate().isBefore(Instant.now())) {
-      throw new InvalidTokenException("Refresh token expiré ou révoqué");
+      throw new InvalidTokenException("error.token.refreshExpiredOrRevoked");
     }
 
     User user = storedToken.getUser();

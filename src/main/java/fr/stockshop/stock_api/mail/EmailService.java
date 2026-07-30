@@ -6,9 +6,11 @@ import jakarta.mail.MessagingException;
 import jakarta.mail.internet.MimeMessage;
 import java.nio.charset.StandardCharsets;
 import java.time.Duration;
+import java.util.Locale;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Value;
+import org.springframework.context.MessageSource;
 import org.springframework.mail.MailException;
 import org.springframework.mail.javamail.JavaMailSender;
 import org.springframework.mail.javamail.MimeMessageHelper;
@@ -19,7 +21,7 @@ import org.thymeleaf.context.Context;
 
 /**
  * Envoie les emails transactionnels de l'application (confirmation de compte, réinitialisation de
- * mot de passe) au format HTML, via SMTP.
+ * mot de passe) au format HTML, via SMTP, traduits selon la langue préférée du destinataire.
  */
 @Service
 public class EmailService {
@@ -28,6 +30,7 @@ public class EmailService {
 
   private final JavaMailSender mailSender;
   private final TemplateEngine templateEngine;
+  private final MessageSource messageSource;
 
   @Value("${app.mail.from}")
   private String mailFrom;
@@ -47,42 +50,50 @@ public class EmailService {
   @SuppressFBWarnings(
       value = "EI_EXPOSE_REP2",
       justification =
-          "mailSender et templateEngine sont des beans Spring singletons partagés et immuables"
-              + " du point de vue de ce service ; aucune copie défensive n'est pertinente ici.")
-  public EmailService(JavaMailSender mailSender, TemplateEngine templateEngine) {
+          "mailSender, templateEngine et messageSource sont des beans Spring singletons partagés"
+              + " et immuables du point de vue de ce service ; aucune copie défensive n'est"
+              + " pertinente ici.")
+  public EmailService(
+      JavaMailSender mailSender, TemplateEngine templateEngine, MessageSource messageSource) {
     this.mailSender = mailSender;
     this.templateEngine = templateEngine;
+    this.messageSource = messageSource;
   }
 
   /** Envoie l'email de confirmation de compte contenant le lien expirable. */
   @Async
   public void sendAccountConfirmationEmail(User user, String rawToken) {
-    Context context = new Context();
+    Locale locale = resolveLocale(user);
+    Context context = new Context(locale);
     context.setVariable("firstName", user.getFirstName());
     context.setVariable(
         "confirmationLink", frontendBaseUrl + confirmationPath + "?token=" + rawToken);
     context.setVariable("expirationHours", tokenExpiration.toHours());
 
-    send(
-        user.getEmail(),
-        "Confirmez votre compte Stock & Shop",
-        "email/account-confirmation",
-        context);
+    String subject = messageSource.getMessage("email.confirmation.subject", null, locale);
+    send(user.getEmail(), subject, "email/account-confirmation", context);
   }
 
   /** Envoie l'email de réinitialisation de mot de passe contenant le lien expirable. */
   @Async
   public void sendPasswordResetEmail(User user, String rawToken) {
-    Context context = new Context();
+    Locale locale = resolveLocale(user);
+    Context context = new Context(locale);
     context.setVariable("firstName", user.getFirstName());
     context.setVariable("resetLink", frontendBaseUrl + resetPasswordPath + "?token=" + rawToken);
     context.setVariable("expirationHours", tokenExpiration.toHours());
 
-    send(
-        user.getEmail(),
-        "Réinitialisation de votre mot de passe Stock & Shop",
-        "email/reset-password",
-        context);
+    String subject = messageSource.getMessage("email.resetPassword.subject", null, locale);
+    send(user.getEmail(), subject, "email/reset-password", context);
+  }
+
+  /**
+   * Langue du destinataire, telle qu'enregistrée sur son compte (voir {@code
+   * User.preferredLocale}).
+   */
+  private Locale resolveLocale(User user) {
+    String code = user.getPreferredLocale();
+    return (code == null || code.isBlank()) ? Locale.FRENCH : Locale.forLanguageTag(code);
   }
 
   private void send(String to, String subject, String templateName, Context context) {

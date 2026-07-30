@@ -4,6 +4,9 @@ import jakarta.servlet.http.HttpServletRequest;
 import java.time.Instant;
 import java.util.HashMap;
 import java.util.Map;
+import lombok.RequiredArgsConstructor;
+import org.springframework.context.MessageSource;
+import org.springframework.context.i18n.LocaleContextHolder;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.access.AccessDeniedException;
@@ -16,9 +19,18 @@ import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
 import org.springframework.web.servlet.resource.NoResourceFoundException;
 
-/** Gestionnaire global des exceptions, garantissant un format de réponse JSON homogène. */
+/**
+ * Gestionnaire global des exceptions, garantissant un format de réponse JSON homogène et traduit.
+ */
 @RestControllerAdvice
+@RequiredArgsConstructor
 public class GlobalExceptionHandler {
+
+  private final MessageSource messageSource;
+
+  private String translate(String code, Object... args) {
+    return messageSource.getMessage(code, args, LocaleContextHolder.getLocale());
+  }
 
   @ExceptionHandler(ApiException.class)
   public ResponseEntity<ApiError> handleApiException(ApiException ex, HttpServletRequest request) {
@@ -27,7 +39,7 @@ public class GlobalExceptionHandler {
             Instant.now(),
             ex.getStatus(),
             HttpStatus.valueOf(ex.getStatus()).getReasonPhrase(),
-            ex.getMessage(),
+            translate(ex.getMessageCode(), ex.getArgs()),
             request.getRequestURI(),
             Map.of());
     return ResponseEntity.status(ex.getStatus()).body(error);
@@ -45,7 +57,7 @@ public class GlobalExceptionHandler {
             Instant.now(),
             HttpStatus.BAD_REQUEST.value(),
             "Bad Request",
-            "Erreur de validation des données",
+            translate("error.validation.title"),
             request.getRequestURI(),
             fieldErrors);
     return ResponseEntity.badRequest().body(error);
@@ -59,7 +71,7 @@ public class GlobalExceptionHandler {
             Instant.now(),
             HttpStatus.UNAUTHORIZED.value(),
             "Unauthorized",
-            "Email ou mot de passe incorrect",
+            translate("error.auth.invalidCredentials"),
             request.getRequestURI(),
             Map.of());
     return ResponseEntity.status(HttpStatus.UNAUTHORIZED).body(error);
@@ -73,7 +85,7 @@ public class GlobalExceptionHandler {
             Instant.now(),
             HttpStatus.UNAUTHORIZED.value(),
             "Unauthorized",
-            "Le compte n'a pas encore été confirmé",
+            translate("error.auth.accountDisabled"),
             request.getRequestURI(),
             Map.of());
     return ResponseEntity.status(HttpStatus.UNAUTHORIZED).body(error);
@@ -87,7 +99,7 @@ public class GlobalExceptionHandler {
             Instant.now(),
             HttpStatus.FORBIDDEN.value(),
             "Forbidden",
-            "Accès refusé",
+            translate("error.accessDenied"),
             request.getRequestURI(),
             Map.of());
     return ResponseEntity.status(HttpStatus.FORBIDDEN).body(error);
@@ -101,7 +113,7 @@ public class GlobalExceptionHandler {
             Instant.now(),
             HttpStatus.NOT_FOUND.value(),
             "Not Found",
-            ex.getMessage(),
+            translate("error.notFound"),
             request.getRequestURI(),
             Map.of());
     return ResponseEntity.status(HttpStatus.NOT_FOUND).body(error);
@@ -114,7 +126,7 @@ public class GlobalExceptionHandler {
             Instant.now(),
             HttpStatus.INTERNAL_SERVER_ERROR.value(),
             "Internal Server Error",
-            "Une erreur inattendue est survenue",
+            translate("error.internal"),
             request.getRequestURI(),
             Map.of());
     return ResponseEntity.internalServerError().body(error);
