@@ -60,6 +60,11 @@ app:
   frontend:
     # Base URL de l'application front (utilisée pour construire les liens envoyés par email).
     base-url: ${FRONTEND_BASE_URL:http://localhost:3000}
+  i18n:
+    # Langues effectivement supportées par l'application (voir src/main/resources/i18n/).
+    # Ajouter une langue : créer messages_xx.properties puis ajouter son code ici, sans
+    # modification de code ni migration de base de données.
+    supported-locales: ${SUPPORTED_LOCALES:fr,en}
 
 springdoc:
   api-docs:

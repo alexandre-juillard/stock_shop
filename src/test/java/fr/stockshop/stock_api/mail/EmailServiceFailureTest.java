@@ -12,6 +12,7 @@ import java.lang.reflect.Field;
 import java.time.Duration;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import org.springframework.context.support.ResourceBundleMessageSource;
 import org.springframework.mail.MailSendException;
 import org.springframework.mail.javamail.JavaMailSenderImpl;
 import org.thymeleaf.TemplateEngine;
@@ -39,7 +40,11 @@ class EmailServiceFailureTest {
     templateEngine = mock(TemplateEngine.class);
     when(templateEngine.process(anyString(), any())).thenReturn("<html>contenu</html>");
 
-    emailService = new EmailService(mailSender, templateEngine);
+    ResourceBundleMessageSource messageSource = new ResourceBundleMessageSource();
+    messageSource.setBasenames("i18n/messages");
+    messageSource.setDefaultEncoding("UTF-8");
+
+    emailService = new EmailService(mailSender, templateEngine, messageSource);
     setField(emailService, "mailFrom", "no-reply@stockshop.fr");
     setField(emailService, "frontendBaseUrl", "http://localhost:3000");
     setField(emailService, "confirmationPath", "/confirm-account");

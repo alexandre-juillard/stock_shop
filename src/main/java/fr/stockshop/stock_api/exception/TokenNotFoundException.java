@@ -4,7 +4,7 @@ import org.springframework.http.HttpStatus;
 
 public class TokenNotFoundException extends ApiException {
 
-  public TokenNotFoundException(String message) {
-    super(HttpStatus.NOT_FOUND.value(), message);
+  public TokenNotFoundException() {
+    super(HttpStatus.NOT_FOUND.value(), "error.token.confirmationNotFound");
   }
 }

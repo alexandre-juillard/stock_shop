@@ -4,7 +4,7 @@ import org.springframework.http.HttpStatus;
 
 public class UserNotFoundException extends ApiException {
 
-  public UserNotFoundException(String message) {
-    super(HttpStatus.NOT_FOUND.value(), message);
+  public UserNotFoundException(String email) {
+    super(HttpStatus.NOT_FOUND.value(), "error.user.notFound", email);
   }
 }
