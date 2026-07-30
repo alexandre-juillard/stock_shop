@@ -170,6 +170,7 @@ Le schéma est entièrement versionné via **Flyway** (`src/main/resources/db/mi
 | `V1__init_schema.sql`                     | Création de toutes les tables métier (users, produits, stock, recettes, listes de courses, unités de quantité, OAuth, sessions, push tokens...), contraintes, index. |
 | `V2__seed_quantity_data.sql`               | Données de seed des référentiels `quantity_types` / `quantity_units` (poids, liquide, unité). |
 | `V3__create_refresh_tokens_table.sql`      | Table technique pour la gestion des jetons de rafraîchissement JWT. |
+| `V4__add_user_preferred_locale.sql`        | Colonne `preferred_locale` sur `users` (langue utilisée pour les emails et messages traduits). |
 
 Principales tables : `users`, `oauth_accounts`, `oauth_link_decisions`, `user_sessions`, `push_tokens`, `quantity_types`, `quantity_units`, `categories`, `products`, `stock_items`, `shopping_list_items`, `recipes`, `recipe_ingredients`, `refresh_tokens`.
 
@@ -177,14 +178,46 @@ Identifiants en `UUID`, timestamps en `TIMESTAMPTZ`, suppression en cascade docu
 
 ## Endpoints d'authentification
 
-| Méthode | Endpoint              | Description                          |
-|---------|------------------------|---------------------------------------|
-| POST    | `/api/auth/register`   | Inscription (email + mot de passe)    |
-| POST    | `/api/auth/login`      | Connexion, retourne access + refresh token |
-| POST    | `/api/auth/refresh`    | Rotation du refresh token             |
-| POST    | `/api/auth/logout`     | Révocation du refresh token           |
+| Méthode | Endpoint                        | Description                                       |
+|---------|-----------------------------------|-----------------------------------------------------|
+| POST    | `/api/auth/register`             | Inscription (email + mot de passe), compte inactif tant que l'email n'est pas confirmé |
+| POST    | `/api/auth/confirm-email`        | Active le compte à partir du token reçu par email |
+| POST    | `/api/auth/resend-confirmation`  | Renvoie un email de confirmation (invalide l'ancien token) |
+| POST    | `/api/auth/login`                | Connexion, retourne access + refresh token        |
+| POST    | `/api/auth/refresh`              | Rotation du refresh token                          |
+| POST    | `/api/auth/logout`               | Révocation du refresh token                        |
+| PATCH   | `/api/users/me/locale`           | Modifie la langue préférée du compte connecté     |
 
-⚠️ La confirmation d'email et les comptes OAuth2 (colonnes déjà présentes en base) ne sont pas encore implémentés côté application.
+⚠️ Les comptes OAuth2 (colonnes déjà présentes en base) ne sont pas encore implémentés côté application.
+
+## Internationalisation (i18n)
+
+Tous les textes affichés à l'utilisateur (messages de validation, erreurs API, emails) sont
+traduits dynamiquement, sans aucun texte en dur dans le code :
+
+- **Fichiers de traduction** : `src/main/resources/i18n/messages_xx.properties` (un fichier par
+  langue ; `messages.properties`, sans suffixe, sert de repli par défaut).
+- **Résolution de la langue** (voir `RequestLocaleFilter`), par ordre de priorité :
+  1. Langue enregistrée sur le compte (`users.preferred_locale`), si l'utilisateur est authentifié.
+  2. En-tête HTTP `Accept-Language`, pour les requêtes anonymes (inscription, connexion...).
+  3. Langue par défaut de l'application (`fr`).
+- **Langue à l'inscription** : capturée automatiquement depuis `Accept-Language` et stockée sur le
+  compte ; modifiable ensuite via `PATCH /api/users/me/locale`.
+- **Emails** : toujours envoyés dans la langue enregistrée du destinataire (`users.preferred_locale`),
+  indépendamment de la requête HTTP qui déclenche l'envoi (les emails sont asynchrones).
+
+### Ajouter une nouvelle langue
+
+Aucune modification de code, ni migration de base de données, n'est nécessaire :
+
+1. Créer `src/main/resources/i18n/messages_xx.properties` (`xx` = code ISO 639-1, ex. `es`, `de`)
+   en traduisant toutes les clés de `messages_fr.properties`.
+2. Ajouter le code à la propriété `app.i18n.supported-locales` dans `application.yml` (ou la
+   variable d'environnement `SUPPORTED_LOCALES`), ex. `fr,en,es`.
+
+> ⚠️ Les fichiers `.properties` doivent rester en ASCII pur : utiliser des échappements Unicode
+> (`\u00e9` pour `é`, etc.) plutôt que des caractères accentués littéraux, afin d'éviter tout risque
+> de corruption d'encodage selon l'éditeur/l'OS utilisé pour les éditer.
 
 ## Contribuer
 

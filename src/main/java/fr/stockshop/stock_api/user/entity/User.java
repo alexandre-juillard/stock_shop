@@ -86,6 +86,10 @@ public class User implements UserDetails {
   @Column(name = "reset_token_expires_at")
   private Instant resetTokenExpiresAt;
 
+  @Column(name = "preferred_locale", nullable = false, length = 5)
+  @Builder.Default
+  private String preferredLocale = "fr";
+
   @Column(name = "expiration_alert_days", nullable = false)
   @Builder.Default
   private int expirationAlertDays = 3;

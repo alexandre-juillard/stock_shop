@@ -49,6 +49,7 @@ public class SecurityConfig {
   };
 
   private final JwtAuthenticationFilter jwtAuthenticationFilter;
+  private final RequestLocaleFilter requestLocaleFilter;
   private final JwtAuthenticationEntryPoint authenticationEntryPoint;
   private final JwtAccessDeniedHandler accessDeniedHandler;
   private final UserDetailsService userDetailsService;
@@ -65,7 +66,8 @@ public class SecurityConfig {
                 ex.authenticationEntryPoint(authenticationEntryPoint)
                     .accessDeniedHandler(accessDeniedHandler))
         .authenticationProvider(authenticationProvider())
-        .addFilterBefore(jwtAuthenticationFilter, UsernamePasswordAuthenticationFilter.class);
+        .addFilterBefore(jwtAuthenticationFilter, UsernamePasswordAuthenticationFilter.class)
+        .addFilterAfter(requestLocaleFilter, JwtAuthenticationFilter.class);
 
     return http.build();
   }

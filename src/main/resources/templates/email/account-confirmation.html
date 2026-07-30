@@ -1,8 +1,8 @@
 <!DOCTYPE html>
-<html xmlns:th="http://www.thymeleaf.org" lang="fr">
+<html xmlns:th="http://www.thymeleaf.org" th:lang="${#locale.language}">
   <head>
     <meta charset="UTF-8" />
-    <title>Confirmez votre compte</title>
+    <title th:text="#{email.confirmation.subject}">Confirmez votre compte</title>
   </head>
   <body style="font-family: Arial, sans-serif; background-color: #f4f4f7; margin: 0; padding: 0">
     <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="padding: 24px 0">
@@ -17,10 +17,16 @@
           >
             <tr>
               <td>
-                <h1 style="color: #1f2937; font-size: 20px; margin-top: 0">
-                  Bienvenue <span th:text="${firstName}">Prénom</span> !
+                <h1
+                  style="color: #1f2937; font-size: 20px; margin-top: 0"
+                  th:text="#{email.confirmation.title(${firstName})}"
+                >
+                  Bienvenue Prénom !
                 </h1>
-                <p style="color: #4b5563; font-size: 14px; line-height: 1.5">
+                <p
+                  style="color: #4b5563; font-size: 14px; line-height: 1.5"
+                  th:text="#{email.confirmation.body}"
+                >
                   Merci de vous être inscrit sur Stock &amp; Shop. Confirmez votre adresse email en
                   cliquant sur le bouton ci-dessous :
                 </p>
@@ -36,13 +42,17 @@
                       font-size: 14px;
                       display: inline-block;
                     "
+                    th:text="#{email.confirmation.button}"
                   >
                     Confirmer mon compte
                   </a>
                 </p>
-                <p style="color: #6b7280; font-size: 12px">
-                  Ce lien expire dans <span th:text="${expirationHours}">24</span> heures. Si vous
-                  n'êtes pas à l'origine de cette inscription, vous pouvez ignorer cet email.
+                <p
+                  style="color: #6b7280; font-size: 12px"
+                  th:text="#{email.confirmation.expiry(${expirationHours})}"
+                >
+                  Ce lien expire dans 24 heures. Si vous n'êtes pas à l'origine de cette
+                  inscription, vous pouvez ignorer cet email.
                 </p>
               </td>
             </tr>
