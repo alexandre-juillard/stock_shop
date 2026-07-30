@@ -35,12 +35,37 @@ Un fichier d'exemple `.env.example` liste les variables attendues :
 | `PGADMIN_EMAIL`           | Identifiant de connexion à pgAdmin                                   | `admin@stockshop.fr` |
 | `PGADMIN_PASSWORD`        | Mot de passe de connexion à pgAdmin                                  | *(à définir)*      |
 | `PGADMIN_PORT`            | Port exposé pour l'interface pgAdmin                                 | `5050`             |
+| `SMTP_HOST`               | Hôte du serveur SMTP (vide = Mailpit en local, voir plus bas)        | `sandbox.smtp.mailtrap.io` |
+| `SMTP_PORT`               | Port du serveur SMTP                                                 | `2525`             |
+| `SMTP_USER`               | Utilisateur SMTP                                                     | *(à définir)*      |
+| `SMTP_PASSWORD`           | Mot de passe SMTP                                                    | *(à définir)*      |
+| `SMTP_AUTH`               | Active l'authentification SMTP                                      | `true`             |
+| `SMTP_STARTTLS`           | Active STARTTLS pour la connexion SMTP                               | `true`             |
+| `MAIL_FROM`               | Adresse expéditrice des emails envoyés par l'application             | `no-reply@stockshop.fr` |
 
 > ⚠️ Ne jamais commiter le fichier `.env` réel. Dupliquez `.env.example` en `.env` et complétez les valeurs avant de démarrer le projet.
 
 ```powershell
 Copy-Item .env.example .env
 ```
+
+### Utiliser Mailtrap (ou un autre service SMTP externe) en développement
+
+Par défaut, le profil `dev` pointe vers **Mailpit** (voir docker-compose.yaml), qui ne nécessite aucune
+authentification. Pour utiliser un service externe comme **Mailtrap Sandbox**, renseignez dans `.env` :
+
+```dotenv
+SMTP_HOST=sandbox.smtp.mailtrap.io
+SMTP_PORT=2525
+SMTP_USER=<votre_user_mailtrap>
+SMTP_PASSWORD=<votre_password_mailtrap>
+SMTP_AUTH=true
+SMTP_STARTTLS=true
+```
+
+Puis redémarrez le conteneur `api` (`docker compose up -d --build api`) ou l'application locale.
+Les emails envoyés par l'application (confirmation de compte, réinitialisation de mot de passe...)
+apparaîtront alors dans votre boîte de réception Mailtrap au lieu de Mailpit.
 
 ## Lancer le projet avec Docker
 
