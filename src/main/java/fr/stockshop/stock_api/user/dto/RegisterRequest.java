@@ -6,13 +6,14 @@ import jakarta.validation.constraints.Size;
 
 /** Requête d'inscription publique. Le rôle attribué est toujours {@code USER}. */
 public record RegisterRequest(
-    @NotBlank(message = "L'email est obligatoire") @Email(message = "L'email doit être valide")
+    @NotBlank(message = "{validation.email.required}")
+        @Email(message = "{validation.email.invalid}")
         String email,
-    @NotBlank(message = "Le mot de passe est obligatoire")
-        @Size(min = 8, message = "Le mot de passe doit contenir au moins 8 caractères")
+    @NotBlank(message = "{validation.password.required}")
+        @Size(min = 8, message = "{validation.password.size}")
         String password,
-    @NotBlank(message = "Le prénom est obligatoire") String firstName,
-    @NotBlank(message = "Le nom est obligatoire") String lastName) {
+    @NotBlank(message = "{validation.firstName.required}") String firstName,
+    @NotBlank(message = "{validation.lastName.required}") String lastName) {
 
   // Ne jamais exposer le mot de passe en clair dans les logs
   @Override
