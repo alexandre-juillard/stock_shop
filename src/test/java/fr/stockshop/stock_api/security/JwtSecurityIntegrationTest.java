@@ -7,6 +7,7 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 import fr.stockshop.stock_api.TestcontainersConfiguration;
+import fr.stockshop.stock_api.user.repository.UserRepository;
 import io.jsonwebtoken.Jwts;
 import io.jsonwebtoken.io.Decoders;
 import io.jsonwebtoken.security.Keys;
@@ -37,6 +38,10 @@ import org.springframework.test.web.servlet.MockMvc;
  *   <li>AC-6 : un token à la signature altérée retourne 401
  *   <li>AC-7 : le filtre authentifie correctement une requête avec un token valide
  * </ul>
+ *
+ * <p>Les comptes étant créés inactifs tant qu'ils ne sont pas confirmés par email, les tests
+ * ci-dessous activent directement le compte via le repository entre l'inscription et la connexion :
+ * ce test cible le filtre JWT, pas le flux de confirmation.
  */
 @SpringBootTest
 @AutoConfigureMockMvc
@@ -45,6 +50,7 @@ import org.springframework.test.web.servlet.MockMvc;
 class JwtSecurityIntegrationTest {
 
   @Autowired private MockMvc mockMvc;
+  @Autowired private UserRepository userRepository;
 
   private final ObjectMapper objectMapper = new ObjectMapper();
 
@@ -61,6 +67,7 @@ class JwtSecurityIntegrationTest {
                 .contentType(MediaType.APPLICATION_JSON)
                 .content(registerPayload(email)))
         .andExpect(status().isCreated());
+    activateUser(email);
 
     mockMvc
         .perform(
@@ -180,6 +187,7 @@ class JwtSecurityIntegrationTest {
                 .contentType(MediaType.APPLICATION_JSON)
                 .content(registerPayload(email)))
         .andExpect(status().isCreated());
+    activateUser(email);
 
     String body =
         mockMvc
@@ -193,6 +201,16 @@ class JwtSecurityIntegrationTest {
             .getContentAsString();
 
     return objectMapper.readTree(body).get("accessToken").asText();
+  }
+
+  private void activateUser(String email) {
+    userRepository
+        .findByEmail(email)
+        .ifPresent(
+            user -> {
+              user.setActive(true);
+              userRepository.save(user);
+            });
   }
 
   private String registerPayload(String email) throws Exception {
