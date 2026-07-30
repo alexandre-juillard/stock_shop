@@ -1,14 +1,20 @@
 package fr.stockshop.stock_api.user.service;
 
+import fr.stockshop.stock_api.exception.AccountAlreadyActiveException;
 import fr.stockshop.stock_api.exception.EmailAlreadyExistsException;
 import fr.stockshop.stock_api.exception.InvalidTokenException;
+import fr.stockshop.stock_api.exception.TokenExpiredException;
+import fr.stockshop.stock_api.exception.TokenNotFoundException;
+import fr.stockshop.stock_api.exception.UserNotFoundException;
 import fr.stockshop.stock_api.mail.EmailService;
 import fr.stockshop.stock_api.security.TokenService;
 import fr.stockshop.stock_api.security.jwt.JwtService;
 import fr.stockshop.stock_api.user.dto.AuthResponse;
+import fr.stockshop.stock_api.user.dto.ConfirmEmailRequest;
 import fr.stockshop.stock_api.user.dto.LoginRequest;
 import fr.stockshop.stock_api.user.dto.RefreshTokenRequest;
 import fr.stockshop.stock_api.user.dto.RegisterRequest;
+import fr.stockshop.stock_api.user.dto.ResendConfirmationRequest;
 import fr.stockshop.stock_api.user.dto.UserResponse;
 import fr.stockshop.stock_api.user.entity.RefreshToken;
 import fr.stockshop.stock_api.user.entity.Role;
@@ -71,6 +77,46 @@ public class AuthenticationService {
     emailService.sendAccountConfirmationEmail(user, rawConfirmationToken);
 
     return userMapper.toResponse(user);
+  }
+
+  @Transactional
+  public void confirmEmail(ConfirmEmailRequest request) {
+    String tokenHash = tokenService.hashToken(request.token());
+    User user =
+        userRepository
+            .findByConfirmationTokenHash(tokenHash)
+            .orElseThrow(() -> new TokenNotFoundException("Token de confirmation introuvable"));
+
+    if (user.getConfirmationTokenExpiresAt() == null
+        || user.getConfirmationTokenExpiresAt().isBefore(Instant.now())) {
+      throw new TokenExpiredException("Token de confirmation expiré");
+    }
+
+    user.setActive(true);
+    user.setEmailConfirmedAt(Instant.now());
+    user.setConfirmationTokenHash(null);
+    user.setConfirmationTokenExpiresAt(null);
+    userRepository.save(user);
+  }
+
+  @Transactional
+  public void resendConfirmation(ResendConfirmationRequest request) {
+    User user =
+        userRepository
+            .findByEmail(request.email())
+            .orElseThrow(
+                () -> new UserNotFoundException("Utilisateur introuvable : " + request.email()));
+
+    if (user.isActive()) {
+      throw new AccountAlreadyActiveException(request.email());
+    }
+
+    String rawConfirmationToken = tokenService.generateToken();
+    user.setConfirmationTokenHash(tokenService.hashToken(rawConfirmationToken));
+    user.setConfirmationTokenExpiresAt(Instant.now().plus(confirmationTokenExpiration));
+    userRepository.save(user);
+
+    emailService.sendAccountConfirmationEmail(user, rawConfirmationToken);
   }
 
   public AuthResponse login(LoginRequest request) {

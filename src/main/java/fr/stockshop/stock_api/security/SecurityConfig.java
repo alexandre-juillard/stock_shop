@@ -37,6 +37,8 @@ public class SecurityConfig {
     "/api/auth/register",
     "/api/auth/login",
     "/api/auth/refresh",
+    "/api/auth/confirm-email",
+    "/api/auth/resend-confirmation",
     "/api/health",
     "/actuator/health",
     "/actuator/health/**",
