@@ -8,6 +8,7 @@ import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.access.AccessDeniedException;
 import org.springframework.security.authentication.BadCredentialsException;
+import org.springframework.security.authentication.DisabledException;
 import org.springframework.security.core.userdetails.UsernameNotFoundException;
 import org.springframework.web.HttpMediaTypeNotSupportedException;
 import org.springframework.web.bind.MethodArgumentNotValidException;
@@ -59,6 +60,20 @@ public class GlobalExceptionHandler {
             HttpStatus.UNAUTHORIZED.value(),
             "Unauthorized",
             "Email ou mot de passe incorrect",
+            request.getRequestURI(),
+            Map.of());
+    return ResponseEntity.status(HttpStatus.UNAUTHORIZED).body(error);
+  }
+
+  @ExceptionHandler(DisabledException.class)
+  public ResponseEntity<ApiError> handleDisabledAccount(
+      DisabledException ex, HttpServletRequest request) {
+    ApiError error =
+        new ApiError(
+            Instant.now(),
+            HttpStatus.UNAUTHORIZED.value(),
+            "Unauthorized",
+            "Le compte n'a pas encore été confirmé",
             request.getRequestURI(),
             Map.of());
     return ResponseEntity.status(HttpStatus.UNAUTHORIZED).body(error);
