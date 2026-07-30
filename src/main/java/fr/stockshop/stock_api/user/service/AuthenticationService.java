@@ -2,16 +2,21 @@ package fr.stockshop.stock_api.user.service;
 
 import fr.stockshop.stock_api.exception.EmailAlreadyExistsException;
 import fr.stockshop.stock_api.exception.InvalidTokenException;
+import fr.stockshop.stock_api.mail.EmailService;
+import fr.stockshop.stock_api.security.TokenService;
 import fr.stockshop.stock_api.security.jwt.JwtService;
 import fr.stockshop.stock_api.user.dto.AuthResponse;
 import fr.stockshop.stock_api.user.dto.LoginRequest;
 import fr.stockshop.stock_api.user.dto.RefreshTokenRequest;
 import fr.stockshop.stock_api.user.dto.RegisterRequest;
+import fr.stockshop.stock_api.user.dto.UserResponse;
 import fr.stockshop.stock_api.user.entity.RefreshToken;
 import fr.stockshop.stock_api.user.entity.Role;
 import fr.stockshop.stock_api.user.entity.User;
+import fr.stockshop.stock_api.user.mapper.UserMapper;
 import fr.stockshop.stock_api.user.repository.RefreshTokenRepository;
 import fr.stockshop.stock_api.user.repository.UserRepository;
+import java.time.Duration;
 import java.time.Instant;
 import lombok.RequiredArgsConstructor;
 import org.springframework.beans.factory.annotation.Value;
@@ -32,18 +37,24 @@ public class AuthenticationService {
   private final PasswordEncoder passwordEncoder;
   private final JwtService jwtService;
   private final AuthenticationManager authenticationManager;
+  private final TokenService tokenService;
+  private final EmailService emailService;
+  private final UserMapper userMapper;
 
   @Value("${security.jwt.refresh-token-expiration}")
   private long refreshTokenExpiration;
 
+  @Value("${app.mail.token-expiration:24h}")
+  private Duration confirmationTokenExpiration;
+
   @Transactional
-  public AuthResponse register(RegisterRequest request) {
+  public UserResponse register(RegisterRequest request) {
     if (userRepository.existsByEmail(request.email())) {
       throw new EmailAlreadyExistsException(request.email());
     }
 
-    // NB : en l'absence de flux de confirmation d'email implémenté à ce jour,
-    // le compte est activé immédiatement à l'inscription (active = true).
+    String rawConfirmationToken = tokenService.generateToken();
+
     User user =
         User.builder()
             .email(request.email())
@@ -51,11 +62,15 @@ public class AuthenticationService {
             .firstName(request.firstName())
             .lastName(request.lastName())
             .role(Role.USER)
-            .active(true)
+            .active(false)
+            .confirmationTokenHash(tokenService.hashToken(rawConfirmationToken))
+            .confirmationTokenExpiresAt(Instant.now().plus(confirmationTokenExpiration))
             .build();
     userRepository.save(user);
 
-    return generateAuthResponse(user);
+    emailService.sendAccountConfirmationEmail(user, rawConfirmationToken);
+
+    return userMapper.toResponse(user);
   }
 
   public AuthResponse login(LoginRequest request) {

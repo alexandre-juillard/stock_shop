@@ -12,4 +12,17 @@ public record RegisterRequest(
         @Size(min = 8, message = "Le mot de passe doit contenir au moins 8 caractères")
         String password,
     @NotBlank(message = "Le prénom est obligatoire") String firstName,
-    @NotBlank(message = "Le nom est obligatoire") String lastName) {}
+    @NotBlank(message = "Le nom est obligatoire") String lastName) {
+
+  // Ne jamais exposer le mot de passe en clair dans les logs
+  @Override
+  public String toString() {
+    return "RegisterRequest[email="
+        + email
+        + ", firstName="
+        + firstName
+        + ", lastName="
+        + lastName
+        + ", password=***]";
+  }
+}

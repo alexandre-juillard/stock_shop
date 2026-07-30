@@ -4,6 +4,7 @@ import fr.stockshop.stock_api.user.dto.AuthResponse;
 import fr.stockshop.stock_api.user.dto.LoginRequest;
 import fr.stockshop.stock_api.user.dto.RefreshTokenRequest;
 import fr.stockshop.stock_api.user.dto.RegisterRequest;
+import fr.stockshop.stock_api.user.dto.UserResponse;
 import fr.stockshop.stock_api.user.service.AuthenticationService;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.tags.Tag;
@@ -25,8 +26,10 @@ public class AuthController {
   private final AuthenticationService authenticationService;
 
   @PostMapping("/register")
-  @Operation(summary = "Créer un compte utilisateur (rôle USER par défaut)")
-  public ResponseEntity<AuthResponse> register(@Valid @RequestBody RegisterRequest request) {
+  @Operation(
+      summary =
+          "Créer un compte utilisateur (rôle USER par défaut, inactif jusqu'à confirmation par email)")
+  public ResponseEntity<UserResponse> register(@Valid @RequestBody RegisterRequest request) {
     return ResponseEntity.status(HttpStatus.CREATED).body(authenticationService.register(request));
   }
 
