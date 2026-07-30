@@ -11,9 +11,13 @@ spring:
   # En local, pointe par défaut vers Mailpit (voir docker-compose.yaml) : un serveur SMTP de
   # développement sans authentification, avec une interface web de consultation des emails reçus
   # (http://localhost:8025). Aucun compte SMTP réel n'est nécessaire pour tester l'envoi d'email.
+  # Pour utiliser un service externe (ex: Mailtrap), définir SMTP_HOST/SMTP_PORT/SMTP_USER/
+  # SMTP_PASSWORD/SMTP_AUTH/SMTP_STARTTLS dans le fichier .env.
   mail:
     host: ${SMTP_HOST:localhost}
     port: ${SMTP_PORT:1025}
+    username: ${SMTP_USER:}
+    password: ${SMTP_PASSWORD:}
     properties:
       mail:
         smtp:
