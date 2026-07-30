@@ -88,6 +88,14 @@ jobs:
 
   dependency-check:
     runs-on: ubuntu-latest
+    # Scan couteux (telechargement de la base NVD) : inutile sur chaque push
+    # vers une branche de ticket (feature/**), d'autant que le cache
+    # actions/cache est scope par branche et n'est pas partage entre branches
+    # de ticket soeurs (seule la branche par defaut le partage avec toutes).
+    # On ne le lance automatiquement que sur les vraies passerelles de merge
+    # (pull_request vers develop/main, push sur main), en plus du controle
+    # hebdomadaire planifie et du declenchement manuel.
+    if: github.event_name != 'push' || github.ref == 'refs/heads/main'
 
     steps:
       - name: Checkout repository
