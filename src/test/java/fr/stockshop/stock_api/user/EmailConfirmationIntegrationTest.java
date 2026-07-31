@@ -34,8 +34,8 @@ import org.springframework.test.web.servlet.MockMvc;
  *
  * <p>L'envoi effectif de l'email (connexion SMTP réelle) est hors périmètre de ce test : il est
  * déjà couvert indépendamment par {@code EmailServiceTest}. Ici, {@link EmailService} est simulé
- * ({@code @MockitoBean}) afin de vérifier uniquement l'état en base et l'interaction, sans
- * dépendre d'un serveur SMTP réel ni de la disponibilité réseau locale.
+ * ({@code @MockitoBean}) afin de vérifier uniquement l'état en base et l'interaction, sans dépendre
+ * d'un serveur SMTP réel ni de la disponibilité réseau locale.
  */
 @SpringBootTest
 @AutoConfigureMockMvc
