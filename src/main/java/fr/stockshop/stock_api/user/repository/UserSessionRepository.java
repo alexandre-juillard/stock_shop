@@ -1,14 +1,14 @@
 package fr.stockshop.stock_api.user.repository;
 
-import fr.stockshop.stock_api.user.entity.RefreshToken;
 import fr.stockshop.stock_api.user.entity.User;
+import fr.stockshop.stock_api.user.entity.UserSession;
 import java.util.Optional;
 import java.util.UUID;
 import org.springframework.data.jpa.repository.JpaRepository;
 
-public interface RefreshTokenRepository extends JpaRepository<RefreshToken, UUID> {
+public interface UserSessionRepository extends JpaRepository<UserSession, UUID> {
 
-  Optional<RefreshToken> findByToken(String token);
+  Optional<UserSession> findByTokenHash(String tokenHash);
 
   void deleteByUser(User user);
 }

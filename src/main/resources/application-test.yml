@@ -11,13 +11,23 @@ spring:
   # sollicité en dehors de EmailServiceTest). Aucun username/password : JavaMailSenderImpl
   # tenterait sinon une connexion SMTP authentifiée, que GreenMail (sans utilisateur configuré)
   # rejetterait.
+  #
+  # host = 127.0.0.1 (et non "localhost") : GreenMail n'écoute que sur l'interface IPv4 loopback.
+  # Sur certaines machines Windows, "localhost" se résout en priorité vers ::1 (IPv6), ce qui fait
+  # échouer/pendre la connexion (aucun listener sur ce côté) et rend les tests d'envoi d'email
+  # flaky (l'envoi @Async reste bloqué bien au-delà de la fenêtre d'attente du test).
+  # connectiontimeout/timeout/writetimeout : échec rapide en cas de mauvaise résolution réseau
+  # plutôt qu'un blocage prolongé du pool de threads @Async partagé.
   mail:
-    host: ${SMTP_HOST:localhost}
+    host: ${SMTP_HOST:127.0.0.1}
     port: ${SMTP_PORT:3025}
     properties:
       mail:
         smtp:
           auth: false
+          connectiontimeout: 5000
+          timeout: 5000
+          writetimeout: 5000
           starttls:
             enable: false
 

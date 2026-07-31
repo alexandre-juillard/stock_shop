@@ -1,26 +1,23 @@
 package fr.stockshop.stock_api.user;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.mockito.Mockito.verify;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
-import com.icegreen.greenmail.junit5.GreenMailExtension;
-import com.icegreen.greenmail.util.ServerSetupTest;
 import fr.stockshop.stock_api.TestcontainersConfiguration;
+import fr.stockshop.stock_api.mail.EmailService;
 import fr.stockshop.stock_api.security.TokenService;
 import fr.stockshop.stock_api.user.entity.User;
 import fr.stockshop.stock_api.user.repository.UserRepository;
-import jakarta.mail.internet.MimeMessage;
 import java.time.Instant;
 import java.time.temporal.ChronoUnit;
 import java.util.Map;
 import java.util.UUID;
-import java.util.regex.Matcher;
-import java.util.regex.Pattern;
 import org.junit.jupiter.api.Test;
-import org.junit.jupiter.api.extension.RegisterExtension;
+import org.mockito.ArgumentCaptor;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.boot.webmvc.test.autoconfigure.AutoConfigureMockMvc;
@@ -28,22 +25,29 @@ import org.springframework.context.annotation.Import;
 import org.springframework.http.MediaType;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.test.context.ActiveProfiles;
+import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import org.springframework.test.web.servlet.MockMvc;
 
-/** Vérifie le flux d'inscription publique (POST /api/auth/register). */
+/**
+ * Vérifie le flux d'inscription publique (POST /api/auth/register).
+ *
+ * <p>L'envoi effectif de l'email (connexion SMTP réelle) est hors périmètre de ce test : il est
+ * déjà couvert indépendamment par {@code EmailServiceTest} (contenu, destinataire, lien). Ici,
+ * {@link EmailService} est simulé ({@code @MockitoBean}) afin de vérifier uniquement l'état en
+ * base et l'interaction (utilisateur/jeton transmis au service), sans dépendre d'un serveur SMTP
+ * réel ni de la disponibilité réseau locale.
+ */
 @SpringBootTest
 @AutoConfigureMockMvc
 @Import(TestcontainersConfiguration.class)
 @ActiveProfiles("test")
 class RegistrationIntegrationTest {
 
-  @RegisterExtension
-  static GreenMailExtension greenMail = new GreenMailExtension(ServerSetupTest.SMTP);
-
   @Autowired private MockMvc mockMvc;
   @Autowired private UserRepository userRepository;
   @Autowired private PasswordEncoder passwordEncoder;
   @Autowired private TokenService tokenService;
+  @MockitoBean private EmailService emailService;
 
   private final ObjectMapper objectMapper = new ObjectMapper();
 
@@ -75,11 +79,14 @@ class RegistrationIntegrationTest {
         .isAfter(Instant.now())
         .isBefore(Instant.now().plus(25, ChronoUnit.HOURS));
 
-    assertThat(greenMail.waitForIncomingEmail(5000, 1)).isTrue();
-    MimeMessage received = greenMail.getReceivedMessages()[0];
-    assertThat(received.getAllRecipients()[0].toString()).isEqualTo(email);
+    // EmailService est simulé : on vérifie que l'envoi a bien été déclenché avec le bon
+    // utilisateur et un jeton dont le hash correspond à celui persisté en base.
+    ArgumentCaptor<User> userCaptor = ArgumentCaptor.forClass(User.class);
+    ArgumentCaptor<String> tokenCaptor = ArgumentCaptor.forClass(String.class);
+    verify(emailService).sendAccountConfirmationEmail(userCaptor.capture(), tokenCaptor.capture());
+    assertThat(userCaptor.getValue().getEmail()).isEqualTo(email);
 
-    String rawTokenFromEmail = extractToken((String) received.getContent());
+    String rawTokenFromEmail = tokenCaptor.getValue();
     assertThat(tokenService.hashToken(rawTokenFromEmail))
         .isEqualTo(user.getConfirmationTokenHash());
     assertThat(rawTokenFromEmail).isNotEqualTo(user.getConfirmationTokenHash());
@@ -142,11 +149,5 @@ class RegistrationIntegrationTest {
             "password", password,
             "firstName", firstName,
             "lastName", lastName));
-  }
-
-  private String extractToken(String emailBody) {
-    Matcher matcher = Pattern.compile("token=([\\w-]+)").matcher(emailBody);
-    assertThat(matcher.find()).isTrue();
-    return matcher.group(1);
   }
 }

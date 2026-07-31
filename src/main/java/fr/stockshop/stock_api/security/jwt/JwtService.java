@@ -17,9 +17,11 @@ import org.springframework.security.core.userdetails.UserDetails;
 import org.springframework.stereotype.Component;
 
 /**
- * Génération et validation des jetons JWT (access + refresh). Chaque token porte au minimum :
- * {@code sub} (email), {@code userId}, {@code email}, {@code iat} et {@code exp} (AC-4 du ticket
- * INF-003).
+ * Génération et validation du jeton JWT d'accès. Chaque token porte au minimum : {@code sub}
+ * (email), {@code userId}, {@code email}, {@code iat} et {@code exp} (AC-4 du ticket INF-003).
+ *
+ * <p>Le refresh token n'est pas un JWT : c'est un UUID aléatoire opaque, haché et persisté dans
+ * {@code user_sessions} (voir {@code AuthenticationService}).
  */
 @Component
 public class JwtService {
@@ -30,15 +32,8 @@ public class JwtService {
   @Value("${security.jwt.access-token-expiration}")
   private long accessTokenExpiration;
 
-  @Value("${security.jwt.refresh-token-expiration}")
-  private long refreshTokenExpiration;
-
   public String generateAccessToken(User user) {
     return buildToken(user, accessTokenExpiration, "access");
-  }
-
-  public String generateRefreshToken(User user) {
-    return buildToken(user, refreshTokenExpiration, "refresh");
   }
 
   public String extractUsername(String token) {
