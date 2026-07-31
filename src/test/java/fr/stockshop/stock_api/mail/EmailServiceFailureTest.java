@@ -50,6 +50,7 @@ class EmailServiceFailureTest {
     setField(emailService, "confirmationPath", "/confirm-account");
     setField(emailService, "resetPasswordPath", "/reset-password");
     setField(emailService, "tokenExpiration", Duration.ofHours(24));
+    setField(emailService, "resetTokenExpiration", Duration.ofHours(1));
   }
 
   @Test
