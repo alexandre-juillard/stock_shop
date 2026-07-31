@@ -1,13 +1,14 @@
 package fr.stockshop.stock_api.user;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.Mockito.verify;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
-import com.icegreen.greenmail.junit5.GreenMailExtension;
-import com.icegreen.greenmail.util.ServerSetupTest;
 import fr.stockshop.stock_api.TestcontainersConfiguration;
+import fr.stockshop.stock_api.mail.EmailService;
 import fr.stockshop.stock_api.security.TokenService;
 import fr.stockshop.stock_api.user.entity.Role;
 import fr.stockshop.stock_api.user.entity.User;
@@ -16,7 +17,7 @@ import java.time.Instant;
 import java.util.Map;
 import java.util.UUID;
 import org.junit.jupiter.api.Test;
-import org.junit.jupiter.api.extension.RegisterExtension;
+import org.mockito.ArgumentCaptor;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.boot.webmvc.test.autoconfigure.AutoConfigureMockMvc;
@@ -24,11 +25,17 @@ import org.springframework.context.annotation.Import;
 import org.springframework.http.MediaType;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.test.context.ActiveProfiles;
+import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import org.springframework.test.web.servlet.MockMvc;
 
 /**
  * Vérifie l'activation de compte (POST /api/auth/confirm-email) et le renvoi de confirmation (POST
  * /api/auth/resend-confirmation).
+ *
+ * <p>L'envoi effectif de l'email (connexion SMTP réelle) est hors périmètre de ce test : il est
+ * déjà couvert indépendamment par {@code EmailServiceTest}. Ici, {@link EmailService} est simulé
+ * ({@code @MockitoBean}) afin de vérifier uniquement l'état en base et l'interaction, sans
+ * dépendre d'un serveur SMTP réel ni de la disponibilité réseau locale.
  */
 @SpringBootTest
 @AutoConfigureMockMvc
@@ -36,13 +43,11 @@ import org.springframework.test.web.servlet.MockMvc;
 @ActiveProfiles("test")
 class EmailConfirmationIntegrationTest {
 
-  @RegisterExtension
-  static GreenMailExtension greenMail = new GreenMailExtension(ServerSetupTest.SMTP);
-
   @Autowired private MockMvc mockMvc;
   @Autowired private UserRepository userRepository;
   @Autowired private PasswordEncoder passwordEncoder;
   @Autowired private TokenService tokenService;
+  @MockitoBean private EmailService emailService;
 
   private final ObjectMapper objectMapper = new ObjectMapper();
 
@@ -112,7 +117,13 @@ class EmailConfirmationIntegrationTest {
 
     User reloaded = userRepository.findByEmail(email).orElseThrow();
     assertThat(reloaded.getConfirmationTokenHash()).isNotEqualTo(oldHash);
-    assertThat(greenMail.waitForIncomingEmail(5000, 1)).isTrue();
+
+    // EmailService est simulé : on vérifie que le renvoi a bien déclenché un nouvel envoi avec un
+    // jeton dont le hash correspond à celui désormais persisté en base.
+    ArgumentCaptor<String> tokenCaptor = ArgumentCaptor.forClass(String.class);
+    verify(emailService).sendAccountConfirmationEmail(any(), tokenCaptor.capture());
+    assertThat(tokenService.hashToken(tokenCaptor.getValue()))
+        .isEqualTo(reloaded.getConfirmationTokenHash());
 
     // L'ancien token n'est plus valide : le nouveau a pris sa place en base.
     mockMvc

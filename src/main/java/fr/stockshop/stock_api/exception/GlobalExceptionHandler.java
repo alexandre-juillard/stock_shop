@@ -83,12 +83,12 @@ public class GlobalExceptionHandler {
     ApiError error =
         new ApiError(
             Instant.now(),
-            HttpStatus.UNAUTHORIZED.value(),
-            "Unauthorized",
+            HttpStatus.FORBIDDEN.value(),
+            "Forbidden",
             translate("error.auth.accountDisabled"),
             request.getRequestURI(),
             Map.of());
-    return ResponseEntity.status(HttpStatus.UNAUTHORIZED).body(error);
+    return ResponseEntity.status(HttpStatus.FORBIDDEN).body(error);
   }
 
   @ExceptionHandler(AccessDeniedException.class)

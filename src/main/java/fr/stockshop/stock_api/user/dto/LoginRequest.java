@@ -7,4 +7,11 @@ public record LoginRequest(
     @NotBlank(message = "{validation.email.required}")
         @Email(message = "{validation.email.invalid}")
         String email,
-    @NotBlank(message = "{validation.password.required}") String password) {}
+    @NotBlank(message = "{validation.password.required}") String password,
+    Boolean rememberMe) {
+
+  /** Normalise l'absence de rememberMe (JSON omis) en {@code false} */
+  public boolean isRememberMe() {
+    return Boolean.TRUE.equals(rememberMe);
+  }
+}
