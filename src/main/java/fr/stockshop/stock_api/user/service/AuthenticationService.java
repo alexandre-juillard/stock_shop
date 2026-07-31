@@ -12,35 +12,38 @@ import fr.stockshop.stock_api.security.jwt.JwtService;
 import fr.stockshop.stock_api.user.dto.AuthResponse;
 import fr.stockshop.stock_api.user.dto.ConfirmEmailRequest;
 import fr.stockshop.stock_api.user.dto.LoginRequest;
+import fr.stockshop.stock_api.user.dto.LoginResponse;
 import fr.stockshop.stock_api.user.dto.RefreshTokenRequest;
 import fr.stockshop.stock_api.user.dto.RegisterRequest;
 import fr.stockshop.stock_api.user.dto.ResendConfirmationRequest;
 import fr.stockshop.stock_api.user.dto.UserResponse;
-import fr.stockshop.stock_api.user.entity.RefreshToken;
 import fr.stockshop.stock_api.user.entity.Role;
 import fr.stockshop.stock_api.user.entity.User;
+import fr.stockshop.stock_api.user.entity.UserSession;
 import fr.stockshop.stock_api.user.mapper.UserMapper;
-import fr.stockshop.stock_api.user.repository.RefreshTokenRepository;
 import fr.stockshop.stock_api.user.repository.UserRepository;
+import fr.stockshop.stock_api.user.repository.UserSessionRepository;
 import java.time.Duration;
 import java.time.Instant;
+import java.util.Objects;
+import java.util.UUID;
 import lombok.RequiredArgsConstructor;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.context.i18n.LocaleContextHolder;
 import org.springframework.security.authentication.AuthenticationManager;
 import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
-import org.springframework.security.core.userdetails.UsernameNotFoundException;
+import org.springframework.security.core.Authentication;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
-/** Gère l'inscription, la connexion, le rafraîchissement et la révocation des jetons JWT. */
+/** Gère l'inscription, la connexion, le rafraîchissement et la révocation des sessions. */
 @Service
 @RequiredArgsConstructor
 public class AuthenticationService {
 
   private final UserRepository userRepository;
-  private final RefreshTokenRepository refreshTokenRepository;
+  private final UserSessionRepository userSessionRepository;
   private final PasswordEncoder passwordEncoder;
   private final JwtService jwtService;
   private final AuthenticationManager authenticationManager;
@@ -49,7 +52,10 @@ public class AuthenticationService {
   private final UserMapper userMapper;
 
   @Value("${security.jwt.refresh-token-expiration}")
-  private long refreshTokenExpiration;
+  private long rememberMeSessionExpiration;
+
+  @Value("${security.session.default-expiration}")
+  private long defaultSessionExpiration;
 
   @Value("${app.mail.token-expiration:24h}")
   private Duration confirmationTokenExpiration;
@@ -120,55 +126,80 @@ public class AuthenticationService {
     emailService.sendAccountConfirmationEmail(user, rawConfirmationToken);
   }
 
-  public AuthResponse login(LoginRequest request) {
-    authenticationManager.authenticate(
-        new UsernamePasswordAuthenticationToken(request.email(), request.password()));
+  @Transactional
+  public LoginResponse login(LoginRequest request, String userAgent) {
+    Authentication authentication =
+        authenticationManager.authenticate(
+            new UsernamePasswordAuthenticationToken(request.email(), request.password()));
 
     User user =
-        userRepository
-            .findByEmail(request.email())
-            .orElseThrow(
-                () ->
-                    new UsernameNotFoundException("Utilisateur introuvable : " + request.email()));
+        Objects.requireNonNull(
+            (User) authentication.getPrincipal(),
+            "Le principal authentifié ne peut pas être null après une authentification réussie");
 
-    return generateAuthResponse(user);
+    String rawRefreshToken = UUID.randomUUID().toString();
+    long sessionExpiration =
+        request.isRememberMe() ? rememberMeSessionExpiration : defaultSessionExpiration;
+
+    userSessionRepository.save(
+        UserSession.builder()
+            .user(user)
+            .tokenHash(tokenService.hashToken(rawRefreshToken))
+            .expiresAt(Instant.now().plusMillis(sessionExpiration))
+            .userAgent(userAgent)
+            .build());
+
+    String accessToken = jwtService.generateAccessToken(user);
+
+    return new LoginResponse(
+        accessToken,
+        rawRefreshToken,
+        new LoginResponse.UserSummary(
+            user.getId(),
+            user.getEmail(),
+            user.getFirstName(),
+            user.getLastName(),
+            user.getTheme(),
+            user.getExpirationAlertDays()));
   }
 
   @Transactional
   public AuthResponse refresh(RefreshTokenRequest request) {
-    RefreshToken storedToken =
-        refreshTokenRepository
-            .findByToken(request.refreshToken())
+    String tokenHash = tokenService.hashToken(request.refreshToken());
+    UserSession session =
+        userSessionRepository
+            .findByTokenHash(tokenHash)
             .orElseThrow(() -> new InvalidTokenException("error.token.refreshInvalid"));
 
-    if (storedToken.isRevoked() || storedToken.getExpiryDate().isBefore(Instant.now())) {
+    if (session.getExpiresAt().isBefore(Instant.now())) {
+      userSessionRepository.delete(session);
       throw new InvalidTokenException("error.token.refreshExpiredOrRevoked");
     }
 
-    User user = storedToken.getUser();
-    refreshTokenRepository.delete(storedToken);
+    User user = session.getUser();
+    Instant preservedExpiration = session.getExpiresAt();
+    String userAgent = session.getUserAgent();
+    userSessionRepository.delete(session);
 
-    return generateAuthResponse(user);
+    // Rotation : nouveau jeton opaque, même échéance absolue que la session d'origine
+    // (une rotation ne doit pas permettre de prolonger indéfiniment une session).
+    String rawRefreshToken = UUID.randomUUID().toString();
+    userSessionRepository.save(
+        UserSession.builder()
+            .user(user)
+            .tokenHash(tokenService.hashToken(rawRefreshToken))
+            .expiresAt(preservedExpiration)
+            .userAgent(userAgent)
+            .build());
+
+    String accessToken = jwtService.generateAccessToken(user);
+    return new AuthResponse(
+        accessToken, rawRefreshToken, "Bearer", jwtService.getAccessTokenExpiration());
   }
 
   @Transactional
   public void logout(String refreshToken) {
-    refreshTokenRepository.findByToken(refreshToken).ifPresent(refreshTokenRepository::delete);
-  }
-
-  private AuthResponse generateAuthResponse(User user) {
-    String accessToken = jwtService.generateAccessToken(user);
-    String refreshToken = jwtService.generateRefreshToken(user);
-
-    refreshTokenRepository.save(
-        RefreshToken.builder()
-            .token(refreshToken)
-            .user(user)
-            .expiryDate(Instant.now().plusMillis(refreshTokenExpiration))
-            .revoked(false)
-            .build());
-
-    return new AuthResponse(
-        accessToken, refreshToken, "Bearer", jwtService.getAccessTokenExpiration());
+    String tokenHash = tokenService.hashToken(refreshToken);
+    userSessionRepository.findByTokenHash(tokenHash).ifPresent(userSessionRepository::delete);
   }
 }

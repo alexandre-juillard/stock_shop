@@ -49,7 +49,12 @@ security:
   jwt:
     secret: ${JWT_SECRET}
     access-token-expiration: ${JWT_ACCESS_TOKEN_EXPIRATION:900000}
+    # Durée du refresh token quand rememberMe=true ("Se souvenir de moi", AC-2 du ticket connexion).
     refresh-token-expiration: ${JWT_REFRESH_TOKEN_EXPIRATION:604800000}
+  session:
+    # Durée du refresh token quand rememberMe=false/absent : session plus courte,
+    # non "mémorisée" au-delà de quelques heures.
+    default-expiration: ${SESSION_DEFAULT_EXPIRATION:43200000}
 
 app:
   mail:

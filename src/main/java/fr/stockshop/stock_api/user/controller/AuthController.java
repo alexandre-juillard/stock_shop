@@ -3,6 +3,7 @@ package fr.stockshop.stock_api.user.controller;
 import fr.stockshop.stock_api.user.dto.AuthResponse;
 import fr.stockshop.stock_api.user.dto.ConfirmEmailRequest;
 import fr.stockshop.stock_api.user.dto.LoginRequest;
+import fr.stockshop.stock_api.user.dto.LoginResponse;
 import fr.stockshop.stock_api.user.dto.RefreshTokenRequest;
 import fr.stockshop.stock_api.user.dto.RegisterRequest;
 import fr.stockshop.stock_api.user.dto.ResendConfirmationRequest;
@@ -16,6 +17,7 @@ import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
+import org.springframework.web.bind.annotation.RequestHeader;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 
@@ -52,8 +54,10 @@ public class AuthController {
 
   @PostMapping("/login")
   @Operation(summary = "S'authentifier et obtenir un access token + refresh token")
-  public ResponseEntity<AuthResponse> login(@Valid @RequestBody LoginRequest request) {
-    return ResponseEntity.ok(authenticationService.login(request));
+  public ResponseEntity<LoginResponse> login(
+      @Valid @RequestBody LoginRequest request,
+      @RequestHeader(value = "User-Agent", required = false) String userAgent) {
+    return ResponseEntity.ok(authenticationService.login(request, userAgent));
   }
 
   @PostMapping("/refresh")

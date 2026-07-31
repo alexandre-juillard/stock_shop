@@ -8,6 +8,7 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 import fr.stockshop.stock_api.TestcontainersConfiguration;
+import fr.stockshop.stock_api.mail.EmailService;
 import fr.stockshop.stock_api.user.entity.User;
 import fr.stockshop.stock_api.user.repository.UserRepository;
 import java.util.Map;
@@ -19,12 +20,16 @@ import org.springframework.boot.webmvc.test.autoconfigure.AutoConfigureMockMvc;
 import org.springframework.context.annotation.Import;
 import org.springframework.http.MediaType;
 import org.springframework.test.context.ActiveProfiles;
+import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import org.springframework.test.web.servlet.MockMvc;
 
 /**
  * Vérifie que les messages de validation/erreur sont traduits dynamiquement selon l'en-tête {@code
  * Accept-Language}, que la langue est capturée à l'inscription, et qu'un utilisateur authentifié
  * peut modifier sa langue préférée via {@code PATCH /api/users/me/locale}.
+ *
+ * <p>{@link EmailService} est simulé ({@code @MockitoBean}) pour éviter toute tentative de
+ * connexion SMTP réelle lors de l'inscription, hors périmètre de ce test.
  */
 @SpringBootTest
 @AutoConfigureMockMvc
@@ -34,6 +39,7 @@ class LocaleIntegrationTest {
 
   @Autowired private MockMvc mockMvc;
   @Autowired private UserRepository userRepository;
+  @MockitoBean private EmailService emailService;
 
   private final ObjectMapper objectMapper = new ObjectMapper();
 

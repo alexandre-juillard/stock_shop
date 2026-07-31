@@ -7,6 +7,7 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 import fr.stockshop.stock_api.TestcontainersConfiguration;
+import fr.stockshop.stock_api.mail.EmailService;
 import fr.stockshop.stock_api.user.repository.UserRepository;
 import io.jsonwebtoken.Jwts;
 import io.jsonwebtoken.io.Decoders;
@@ -24,6 +25,7 @@ import org.springframework.boot.webmvc.test.autoconfigure.AutoConfigureMockMvc;
 import org.springframework.context.annotation.Import;
 import org.springframework.http.MediaType;
 import org.springframework.test.context.ActiveProfiles;
+import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import org.springframework.test.web.servlet.MockMvc;
 
 /**
@@ -41,7 +43,9 @@ import org.springframework.test.web.servlet.MockMvc;
  *
  * <p>Les comptes étant créés inactifs tant qu'ils ne sont pas confirmés par email, les tests
  * ci-dessous activent directement le compte via le repository entre l'inscription et la connexion :
- * ce test cible le filtre JWT, pas le flux de confirmation.
+ * ce test cible le filtre JWT, pas le flux de confirmation. {@link EmailService} est simulé
+ * ({@code @MockitoBean}) pour éviter toute tentative de connexion SMTP réelle lors de
+ * l'inscription, hors périmètre de ce test.
  */
 @SpringBootTest
 @AutoConfigureMockMvc
@@ -51,6 +55,7 @@ class JwtSecurityIntegrationTest {
 
   @Autowired private MockMvc mockMvc;
   @Autowired private UserRepository userRepository;
+  @MockitoBean private EmailService emailService;
 
   private final ObjectMapper objectMapper = new ObjectMapper();
 

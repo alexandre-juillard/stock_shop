@@ -19,35 +19,34 @@ import lombok.Setter;
 import org.hibernate.annotations.CreationTimestamp;
 
 /**
- * Jeton de rafraîchissement persisté, permettant de révoquer une session (logout, rotation) sans
- * attendre l'expiration naturelle du token.
+ * Session de connexion persistée (mécanisme "Se souvenir de moi") : le refresh token est un UUID
+ * aléatoire dont seule l'empreinte SHA-256 est stockée en base, jamais la valeur en clair.
  */
 @Entity
-@Table(name = "refresh_tokens")
+@Table(name = "user_sessions")
 @Getter
 @Setter
 @NoArgsConstructor
 @AllArgsConstructor
 @Builder
-public class RefreshToken {
+public class UserSession {
 
   @Id
   @GeneratedValue(strategy = GenerationType.UUID)
   private UUID id;
 
-  @Column(nullable = false, unique = true, length = 512)
-  private String token;
-
   @ManyToOne(fetch = FetchType.LAZY, optional = false)
   @JoinColumn(name = "user_id", nullable = false)
   private User user;
 
-  @Column(name = "expiry_date", nullable = false)
-  private Instant expiryDate;
+  @Column(name = "token_hash", nullable = false, unique = true, length = 255)
+  private String tokenHash;
 
-  @Column(nullable = false)
-  @Builder.Default
-  private boolean revoked = false;
+  @Column(name = "expires_at", nullable = false)
+  private Instant expiresAt;
+
+  @Column(name = "user_agent", length = 500)
+  private String userAgent;
 
   @CreationTimestamp
   @Column(name = "created_at", nullable = false, updatable = false)
