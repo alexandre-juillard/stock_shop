@@ -62,6 +62,8 @@ app:
     # Durée de validité des jetons de confirmation de compte / réinitialisation de mot de passe
     # (format Duration Spring Boot : "24h", "PT24H", "30m"...).
     token-expiration: ${TOKEN_EXPIRATION:24h}
+    # Durée de validité du jeton de réinitialisation de mot de passe, plus courte car plus sensible.
+    reset-token-expiration: ${RESET_TOKEN_EXPIRATION:1h}
   frontend:
     # Base URL de l'application front (utilisée pour construire les liens envoyés par email).
     base-url: ${FRONTEND_BASE_URL:http://localhost:3000}

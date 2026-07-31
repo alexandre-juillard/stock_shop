@@ -47,6 +47,9 @@ public class EmailService {
   @Value("${app.mail.token-expiration:24h}")
   private Duration tokenExpiration;
 
+  @Value("${app.mail.reset-token-expiration:1h}")
+  private Duration resetTokenExpiration;
+
   @SuppressFBWarnings(
       value = "EI_EXPOSE_REP2",
       justification =
@@ -81,7 +84,7 @@ public class EmailService {
     Context context = new Context(locale);
     context.setVariable("firstName", user.getFirstName());
     context.setVariable("resetLink", frontendBaseUrl + resetPasswordPath + "?token=" + rawToken);
-    context.setVariable("expirationHours", tokenExpiration.toHours());
+    context.setVariable("expirationHours", resetTokenExpiration.toHours());
 
     String subject = messageSource.getMessage("email.resetPassword.subject", null, locale);
     send(user.getEmail(), subject, "email/reset-password", context);
