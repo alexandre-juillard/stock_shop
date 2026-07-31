@@ -2,11 +2,13 @@ package fr.stockshop.stock_api.user.controller;
 
 import fr.stockshop.stock_api.user.dto.AuthResponse;
 import fr.stockshop.stock_api.user.dto.ConfirmEmailRequest;
+import fr.stockshop.stock_api.user.dto.ForgotPasswordRequest;
 import fr.stockshop.stock_api.user.dto.LoginRequest;
 import fr.stockshop.stock_api.user.dto.LoginResponse;
 import fr.stockshop.stock_api.user.dto.RefreshTokenRequest;
 import fr.stockshop.stock_api.user.dto.RegisterRequest;
 import fr.stockshop.stock_api.user.dto.ResendConfirmationRequest;
+import fr.stockshop.stock_api.user.dto.ResetPasswordRequest;
 import fr.stockshop.stock_api.user.dto.UserResponse;
 import fr.stockshop.stock_api.user.service.AuthenticationService;
 import io.swagger.v3.oas.annotations.Operation;
@@ -71,5 +73,19 @@ public class AuthController {
   public ResponseEntity<Void> logout(@Valid @RequestBody RefreshTokenRequest request) {
     authenticationService.logout(request.refreshToken());
     return ResponseEntity.noContent().build();
+  }
+
+  @PostMapping("/forgot-password")
+  @Operation(summary = "Demander un email de réinitialisation de mot de passe")
+  public ResponseEntity<Void> forgotPassword(@Valid @RequestBody ForgotPasswordRequest request) {
+    authenticationService.forgotPassword(request);
+    return ResponseEntity.ok().build();
+  }
+
+  @PostMapping("/reset-password")
+  @Operation(summary = "Choisir un nouveau mot de passe à partir du token reçu par email")
+  public ResponseEntity<Void> resetPassword(@Valid @RequestBody ResetPasswordRequest request) {
+    authenticationService.resetPassword(request);
+    return ResponseEntity.ok().build();
   }
 }

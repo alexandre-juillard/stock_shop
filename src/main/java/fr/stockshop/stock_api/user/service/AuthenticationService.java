@@ -3,6 +3,8 @@ package fr.stockshop.stock_api.user.service;
 import fr.stockshop.stock_api.exception.AccountAlreadyActiveException;
 import fr.stockshop.stock_api.exception.EmailAlreadyExistsException;
 import fr.stockshop.stock_api.exception.InvalidTokenException;
+import fr.stockshop.stock_api.exception.ResetTokenExpiredException;
+import fr.stockshop.stock_api.exception.ResetTokenNotFoundException;
 import fr.stockshop.stock_api.exception.TokenExpiredException;
 import fr.stockshop.stock_api.exception.TokenNotFoundException;
 import fr.stockshop.stock_api.exception.UserNotFoundException;
@@ -11,11 +13,13 @@ import fr.stockshop.stock_api.security.TokenService;
 import fr.stockshop.stock_api.security.jwt.JwtService;
 import fr.stockshop.stock_api.user.dto.AuthResponse;
 import fr.stockshop.stock_api.user.dto.ConfirmEmailRequest;
+import fr.stockshop.stock_api.user.dto.ForgotPasswordRequest;
 import fr.stockshop.stock_api.user.dto.LoginRequest;
 import fr.stockshop.stock_api.user.dto.LoginResponse;
 import fr.stockshop.stock_api.user.dto.RefreshTokenRequest;
 import fr.stockshop.stock_api.user.dto.RegisterRequest;
 import fr.stockshop.stock_api.user.dto.ResendConfirmationRequest;
+import fr.stockshop.stock_api.user.dto.ResetPasswordRequest;
 import fr.stockshop.stock_api.user.dto.UserResponse;
 import fr.stockshop.stock_api.user.entity.Role;
 import fr.stockshop.stock_api.user.entity.User;
@@ -37,7 +41,10 @@ import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
-/** Gère l'inscription, la connexion, le rafraîchissement et la révocation des sessions. */
+/**
+ * Gère l'inscription, la connexion, le rafraîchissement, la révocation des sessions et la
+ * réinitialisation de mot de passe.
+ */
 @Service
 @RequiredArgsConstructor
 public class AuthenticationService {
@@ -59,6 +66,9 @@ public class AuthenticationService {
 
   @Value("${app.mail.token-expiration:24h}")
   private Duration confirmationTokenExpiration;
+
+  @Value("${app.mail.reset-token-expiration:1h}")
+  private Duration resetTokenExpiration;
 
   @Transactional
   public UserResponse register(RegisterRequest request) {
@@ -203,5 +213,49 @@ public class AuthenticationService {
   public void logout(String refreshToken) {
     String tokenHash = tokenService.hashToken(refreshToken);
     userSessionRepository.findByTokenHash(tokenHash).ifPresent(userSessionRepository::delete);
+  }
+
+  @Transactional
+  public void forgotPassword(ForgotPasswordRequest request) {
+    // Ne révèle jamais si le compte existe : la réponse HTTP est toujours 200, l'email n'est
+    // envoyé que si un compte correspond.
+    userRepository
+        .findByEmail(request.email())
+        .ifPresent(
+            user -> {
+              String rawResetToken = tokenService.generateToken();
+              user.setResetTokenHash(tokenService.hashToken(rawResetToken));
+              user.setResetTokenExpiresAt(Instant.now().plus(resetTokenExpiration));
+              userRepository.save(user);
+
+              emailService.sendPasswordResetEmail(user, rawResetToken);
+            });
+  }
+
+  // La session expirée doit rester supprimée même si l'exception qui suit provoque normalement
+  // un rollback (ResetTokenExpiredException est une RuntimeException).
+  @Transactional(noRollbackFor = ResetTokenExpiredException.class)
+  public void resetPassword(ResetPasswordRequest request) {
+    String tokenHash = tokenService.hashToken(request.token());
+    User user =
+        userRepository
+            .findByResetTokenHash(tokenHash)
+            .orElseThrow(ResetTokenNotFoundException::new);
+
+    if (user.getResetTokenExpiresAt() == null
+        || user.getResetTokenExpiresAt().isBefore(Instant.now())) {
+      user.setResetTokenHash(null);
+      user.setResetTokenExpiresAt(null);
+      userRepository.save(user);
+      throw new ResetTokenExpiredException();
+    }
+
+    user.setPasswordHash(passwordEncoder.encode(request.newPassword()));
+    user.setResetTokenHash(null);
+    user.setResetTokenExpiresAt(null);
+    userRepository.save(user);
+
+    // Un changement de mot de passe révoque toutes les sessions actives de l'utilisateur.
+    userSessionRepository.deleteByUser(user);
   }
 }
