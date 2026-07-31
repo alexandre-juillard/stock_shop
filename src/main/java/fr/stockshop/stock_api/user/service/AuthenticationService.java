@@ -163,7 +163,9 @@ public class AuthenticationService {
             user.getExpirationAlertDays()));
   }
 
-  @Transactional
+  // La session expirée doit rester supprimée même si l'exception qui suit provoque normalement
+  // un rollback (InvalidTokenException est une RuntimeException).
+  @Transactional(noRollbackFor = InvalidTokenException.class)
   public AuthResponse refresh(RefreshTokenRequest request) {
     String tokenHash = tokenService.hashToken(request.refreshToken());
     UserSession session =
