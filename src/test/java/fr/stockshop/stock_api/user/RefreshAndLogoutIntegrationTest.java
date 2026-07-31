@@ -242,4 +242,3 @@ class RefreshAndLogoutIntegrationTest {
     return objectMapper.writeValueAsString(Map.of("refreshToken", refreshToken));
   }
 }
-
