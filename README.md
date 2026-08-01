@@ -224,6 +224,16 @@ lien avec le fournisseur est stocké dans `oauth_accounts`.
    l'écran de consentement Google ; après acceptation, Google redirige vers
    `/api/auth/oauth2/callback`, qui répond avec `{ accessToken, refreshToken, user }`.
 
+> ⚠️ **À prévoir pour un futur frontend mobile (React Native)** : `localhost` ne fonctionne pas
+> depuis un appareil/émulateur mobile (voir section Docker/local plus bas pour les adresses
+> équivalentes), et Google exige un `redirect_uri` en **HTTPS** sauf pour `localhost`/`127.0.0.1`
+> (un tunnel type ngrok/Cloudflare Tunnel sera nécessaire pour tester depuis un téléphone physique
+> en dev). De plus, l'endpoint `/api/auth/oauth2/callback` renvoie actuellement le JSON directement
+> dans la réponse HTTP (adapté à un test via Swagger/navigateur) : une app mobile ne peut pas lire
+> ce JSON depuis une WebView/navigateur système de la même façon. Il faudra alors adapter ce
+> endpoint (redirection vers un deep link / custom URL scheme de l'app, ou échange d'un code à usage
+> unique contre les tokens) une fois le schéma d'URL du frontend RN défini.
+
 ## Internationalisation (i18n)
 
 Tous les textes affichés à l'utilisateur (messages de validation, erreurs API, emails) sont
