@@ -17,6 +17,7 @@ import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
+import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestHeader;
@@ -87,5 +88,17 @@ public class AuthController {
   public ResponseEntity<Void> resetPassword(@Valid @RequestBody ResetPasswordRequest request) {
     authenticationService.resetPassword(request);
     return ResponseEntity.ok().build();
+  }
+
+  @GetMapping("/oauth2/google")
+  @Operation(summary = "Rediriger (302) vers la page de consentement Google")
+  public ResponseEntity<Void> redirectToGoogle() {
+    throw new UnsupportedOperationException("Géré par Spring Security, jamais appelé directement");
+  }
+
+  @GetMapping("/oauth2/callback")
+  @Operation(summary = "Callback Google : crée/relie le compte et retourne les jetons")
+  public ResponseEntity<LoginResponse> oauth2Callback() {
+    throw new UnsupportedOperationException("Géré par Spring Security, jamais appelé directement");
   }
 }
