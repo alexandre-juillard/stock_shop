@@ -1,6 +1,8 @@
 package fr.stockshop.stock_api.user.controller;
 
 import fr.stockshop.stock_api.user.dto.UpdateLocaleRequest;
+import fr.stockshop.stock_api.user.dto.UpdateProfileRequest;
+import fr.stockshop.stock_api.user.dto.UserProfileResponse;
 import fr.stockshop.stock_api.user.entity.User;
 import fr.stockshop.stock_api.user.service.UserService;
 import io.swagger.v3.oas.annotations.Operation;
@@ -9,7 +11,9 @@ import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
+import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PatchMapping;
+import org.springframework.web.bind.annotation.PutMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
@@ -21,6 +25,19 @@ import org.springframework.web.bind.annotation.RestController;
 public class UserController {
 
   private final UserService userService;
+
+  @GetMapping
+  @Operation(summary = "Consulter le profil du compte connecté")
+  public ResponseEntity<UserProfileResponse> getProfile(@AuthenticationPrincipal User currentUser) {
+    return ResponseEntity.ok(userService.getProfile(currentUser));
+  }
+
+  @PutMapping
+  @Operation(summary = "Modifier le profil du compte connecté (champs fournis uniquement)")
+  public ResponseEntity<UserProfileResponse> updateProfile(
+      @AuthenticationPrincipal User currentUser, @Valid @RequestBody UpdateProfileRequest request) {
+    return ResponseEntity.ok(userService.updateProfile(currentUser, request));
+  }
 
   @PatchMapping("/locale")
   @Operation(
