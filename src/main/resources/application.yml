@@ -76,6 +76,9 @@ app:
     token-expiration: ${TOKEN_EXPIRATION:24h}
     # Durée de validité du jeton de réinitialisation de mot de passe, plus courte car plus sensible.
     reset-token-expiration: ${RESET_TOKEN_EXPIRATION:1h}
+  oauth2:
+    # Durée de validité du linkContext proposé lors d'une liaison de compte OAuth2 (AUTH-007).
+    link-context-expiration: ${OAUTH2_LINK_CONTEXT_EXPIRATION:10m}
   frontend:
     # Base URL de l'application front (utilisée pour construire les liens envoyés par email).
     base-url: ${FRONTEND_BASE_URL:http://localhost:3000}

@@ -1,7 +1,7 @@
 package fr.stockshop.stock_api.security.oauth2;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
-import fr.stockshop.stock_api.user.dto.LoginResponse;
+import fr.stockshop.stock_api.user.dto.OAuth2LoginOutcome;
 import fr.stockshop.stock_api.user.service.AuthenticationService;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
@@ -36,7 +36,7 @@ public class OAuth2AuthenticationSuccessHandler implements AuthenticationSuccess
       throw new IllegalStateException("Principal OAuth2 inattendu : " + principal);
     }
 
-    LoginResponse loginResponse =
+    OAuth2LoginOutcome outcome =
         authenticationService.loginWithOAuth2(
             PROVIDER_GOOGLE,
             oidcUser.getSubject(),
@@ -48,6 +48,7 @@ public class OAuth2AuthenticationSuccessHandler implements AuthenticationSuccess
 
     response.setStatus(HttpServletResponse.SC_OK);
     response.setContentType(MediaType.APPLICATION_JSON_VALUE);
-    objectMapper.writeValue(response.getWriter(), loginResponse);
+    objectMapper.writeValue(
+        response.getWriter(), outcome.requiresLink() ? outcome.linkRequired() : outcome.tokens());
   }
 }

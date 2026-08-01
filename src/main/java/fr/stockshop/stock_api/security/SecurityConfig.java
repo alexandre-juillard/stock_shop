@@ -2,6 +2,7 @@ package fr.stockshop.stock_api.security;
 
 import fr.stockshop.stock_api.security.jwt.JwtAuthenticationFilter;
 import fr.stockshop.stock_api.security.oauth2.CookieOAuth2AuthorizationRequestRepository;
+import fr.stockshop.stock_api.security.oauth2.GoogleOnlyAuthorizationRequestResolver;
 import fr.stockshop.stock_api.security.oauth2.OAuth2AuthenticationFailureHandler;
 import fr.stockshop.stock_api.security.oauth2.OAuth2AuthenticationSuccessHandler;
 import java.util.List;
@@ -54,6 +55,7 @@ public class SecurityConfig {
   private final JwtAccessDeniedHandler accessDeniedHandler;
   private final AuthenticationProvider authenticationProvider;
   private final CookieOAuth2AuthorizationRequestRepository cookieAuthorizationRequestRepository;
+  private final GoogleOnlyAuthorizationRequestResolver googleOnlyAuthorizationRequestResolver;
   private final OAuth2AuthenticationSuccessHandler oAuth2AuthenticationSuccessHandler;
   private final OAuth2AuthenticationFailureHandler oAuth2AuthenticationFailureHandler;
 
@@ -70,16 +72,19 @@ public class SecurityConfig {
                     .accessDeniedHandler(accessDeniedHandler))
         .authenticationProvider(authenticationProvider)
         // Flux OAuth2 Google (authorization code flow) : la requête d'autorisation (state/nonce)
-        // est stockée dans un cookie plutôt qu'en session, l'API restant stateless.
+        // est stockée dans un cookie plutôt qu'en session, l'API restant stateless. Le résolveur
+        // personnalisé évite que /api/auth/oauth2/callback ou /api/auth/oauth2/link-decision ne
+        // soient interprétés à tort comme une demande de démarrage du flux Google.
         .oauth2Login(
             oauth2 ->
                 oauth2
                     .authorizationEndpoint(
                         endpoint ->
                             endpoint
-                                .baseUri("/api/auth/oauth2")
                                 .authorizationRequestRepository(
-                                    cookieAuthorizationRequestRepository))
+                                    cookieAuthorizationRequestRepository)
+                                .authorizationRequestResolver(
+                                    googleOnlyAuthorizationRequestResolver))
                     .redirectionEndpoint(endpoint -> endpoint.baseUri("/api/auth/oauth2/callback"))
                     .successHandler(oAuth2AuthenticationSuccessHandler)
                     .failureHandler(oAuth2AuthenticationFailureHandler))
