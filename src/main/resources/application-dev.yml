@@ -25,6 +25,16 @@ spring:
           starttls:
             enable: ${SMTP_STARTTLS:false}
 
+  # Valeurs de secours UNIQUEMENT pour permettre le démarrage en local sans compte Google Cloud :
+  # le flux OAuth2 échouera jusqu'à ce que de vrais identifiants soient renseignés dans .env.
+  security:
+    oauth2:
+      client:
+        registration:
+          google:
+            client-id: ${GOOGLE_CLIENT_ID:dev-placeholder-client-id}
+            client-secret: ${GOOGLE_CLIENT_SECRET:dev-placeholder-client-secret}
+
 app:
   mail:
     from: ${MAIL_FROM:no-reply@stockshop.fr}
