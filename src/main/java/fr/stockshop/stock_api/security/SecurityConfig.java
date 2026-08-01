@@ -1,22 +1,19 @@
 package fr.stockshop.stock_api.security;
 
 import fr.stockshop.stock_api.security.jwt.JwtAuthenticationFilter;
+import fr.stockshop.stock_api.security.oauth2.CookieOAuth2AuthorizationRequestRepository;
+import fr.stockshop.stock_api.security.oauth2.OAuth2AuthenticationFailureHandler;
+import fr.stockshop.stock_api.security.oauth2.OAuth2AuthenticationSuccessHandler;
 import java.util.List;
 import lombok.RequiredArgsConstructor;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
-import org.springframework.security.authentication.AuthenticationManager;
 import org.springframework.security.authentication.AuthenticationProvider;
-import org.springframework.security.authentication.dao.DaoAuthenticationProvider;
-import org.springframework.security.config.annotation.authentication.configuration.AuthenticationConfiguration;
 import org.springframework.security.config.annotation.method.configuration.EnableMethodSecurity;
 import org.springframework.security.config.annotation.web.builders.HttpSecurity;
 import org.springframework.security.config.annotation.web.configuration.EnableWebSecurity;
 import org.springframework.security.config.annotation.web.configurers.AbstractHttpConfigurer;
 import org.springframework.security.config.http.SessionCreationPolicy;
-import org.springframework.security.core.userdetails.UserDetailsService;
-import org.springframework.security.crypto.bcrypt.BCryptPasswordEncoder;
-import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.security.web.SecurityFilterChain;
 import org.springframework.security.web.authentication.UsernamePasswordAuthenticationFilter;
 import org.springframework.web.cors.CorsConfiguration;
@@ -41,6 +38,7 @@ public class SecurityConfig {
     "/api/auth/resend-confirmation",
     "/api/auth/forgot-password",
     "/api/auth/reset-password",
+    "/api/auth/oauth2/**",
     "/api/health",
     "/actuator/health",
     "/actuator/health/**",
@@ -54,7 +52,10 @@ public class SecurityConfig {
   private final RequestLocaleFilter requestLocaleFilter;
   private final JwtAuthenticationEntryPoint authenticationEntryPoint;
   private final JwtAccessDeniedHandler accessDeniedHandler;
-  private final UserDetailsService userDetailsService;
+  private final AuthenticationProvider authenticationProvider;
+  private final CookieOAuth2AuthorizationRequestRepository cookieAuthorizationRequestRepository;
+  private final OAuth2AuthenticationSuccessHandler oAuth2AuthenticationSuccessHandler;
+  private final OAuth2AuthenticationFailureHandler oAuth2AuthenticationFailureHandler;
 
   @Bean
   public SecurityFilterChain securityFilterChain(HttpSecurity http) throws Exception {
@@ -67,29 +68,25 @@ public class SecurityConfig {
             ex ->
                 ex.authenticationEntryPoint(authenticationEntryPoint)
                     .accessDeniedHandler(accessDeniedHandler))
-        .authenticationProvider(authenticationProvider())
+        .authenticationProvider(authenticationProvider)
+        // Flux OAuth2 Google (authorization code flow) : la requête d'autorisation (state/nonce)
+        // est stockée dans un cookie plutôt qu'en session, l'API restant stateless.
+        .oauth2Login(
+            oauth2 ->
+                oauth2
+                    .authorizationEndpoint(
+                        endpoint ->
+                            endpoint
+                                .baseUri("/api/auth/oauth2")
+                                .authorizationRequestRepository(
+                                    cookieAuthorizationRequestRepository))
+                    .redirectionEndpoint(endpoint -> endpoint.baseUri("/api/auth/oauth2/callback"))
+                    .successHandler(oAuth2AuthenticationSuccessHandler)
+                    .failureHandler(oAuth2AuthenticationFailureHandler))
         .addFilterBefore(jwtAuthenticationFilter, UsernamePasswordAuthenticationFilter.class)
         .addFilterAfter(requestLocaleFilter, JwtAuthenticationFilter.class);
 
     return http.build();
-  }
-
-  @Bean
-  public AuthenticationProvider authenticationProvider() {
-    DaoAuthenticationProvider provider = new DaoAuthenticationProvider(userDetailsService);
-    provider.setPasswordEncoder(passwordEncoder());
-    return provider;
-  }
-
-  @Bean
-  public AuthenticationManager authenticationManager(AuthenticationConfiguration config)
-      throws Exception {
-    return config.getAuthenticationManager();
-  }
-
-  @Bean
-  public PasswordEncoder passwordEncoder() {
-    return new BCryptPasswordEncoder();
   }
 
   @Bean

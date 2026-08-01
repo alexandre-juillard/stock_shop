@@ -186,9 +186,43 @@ Identifiants en `UUID`, timestamps en `TIMESTAMPTZ`, suppression en cascade docu
 | POST    | `/api/auth/login`                | Connexion, retourne access + refresh token        |
 | POST    | `/api/auth/refresh`              | Rotation du refresh token                          |
 | POST    | `/api/auth/logout`               | Révocation du refresh token                        |
+| POST    | `/api/auth/forgot-password`      | Demande un email de réinitialisation de mot de passe |
+| POST    | `/api/auth/reset-password`       | Choisit un nouveau mot de passe à partir du token reçu par email |
+| GET     | `/api/auth/oauth2/google`        | Redirige vers la page de consentement Google      |
+| GET     | `/api/auth/oauth2/callback`      | Callback Google : crée/relie le compte et retourne les jetons |
 | PATCH   | `/api/users/me/locale`           | Modifie la langue préférée du compte connecté     |
 
-⚠️ Les comptes OAuth2 (colonnes déjà présentes en base) ne sont pas encore implémentés côté application.
+Voir [Authentification OAuth2 Google](#authentification-oauth2-google) pour la configuration côté
+Google Cloud Console.
+
+## Authentification OAuth2 Google
+
+L'application permet de se connecter avec un compte Google (`spring-boot-starter-oauth2-client`,
+authorization code flow géré côté serveur). Un compte créé via Google est activé d'office
+(`is_active=TRUE`, email vérifié par Google) et n'a pas de mot de passe (`password_hash=NULL`) ; le
+lien avec le fournisseur est stocké dans `oauth_accounts`.
+
+### Configuration Google Cloud Console
+
+1. Aller sur [Google Cloud Console](https://console.cloud.google.com/), créer (ou sélectionner) un
+   projet.
+2. **APIs et services > Écran de consentement OAuth** : configurer le type (Externe pour les tests),
+   le nom de l'application, l'email de support, puis ajouter les scopes `openid`, `email`, `profile`.
+3. **APIs et services > Identifiants > Créer des identifiants > ID client OAuth** :
+   - Type d'application : **Application Web**.
+   - **Origines JavaScript autorisées** : URL publique du front (ex. `http://localhost:3000`).
+   - **URI de redirection autorisés** : URL publique de l'API suivie de
+     `/api/auth/oauth2/callback`, par exemple :
+     - Local : `http://localhost:8080/api/auth/oauth2/callback`
+     - Production : `https://api.mon-domaine.fr/api/auth/oauth2/callback`
+4. Récupérer l'**ID client** et le **secret client** générés, puis les renseigner dans `.env` :
+   ```
+   GOOGLE_CLIENT_ID=...
+   GOOGLE_CLIENT_SECRET=...
+   ```
+5. Redémarrer l'application. Depuis un navigateur, `GET /api/auth/oauth2/google` redirige vers
+   l'écran de consentement Google ; après acceptation, Google redirige vers
+   `/api/auth/oauth2/callback`, qui répond avec `{ accessToken, refreshToken, user }`.
 
 ## Internationalisation (i18n)
 

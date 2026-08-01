@@ -21,10 +21,12 @@ import fr.stockshop.stock_api.user.dto.RegisterRequest;
 import fr.stockshop.stock_api.user.dto.ResendConfirmationRequest;
 import fr.stockshop.stock_api.user.dto.ResetPasswordRequest;
 import fr.stockshop.stock_api.user.dto.UserResponse;
+import fr.stockshop.stock_api.user.entity.OauthAccount;
 import fr.stockshop.stock_api.user.entity.Role;
 import fr.stockshop.stock_api.user.entity.User;
 import fr.stockshop.stock_api.user.entity.UserSession;
 import fr.stockshop.stock_api.user.mapper.UserMapper;
+import fr.stockshop.stock_api.user.repository.OauthAccountRepository;
 import fr.stockshop.stock_api.user.repository.UserRepository;
 import fr.stockshop.stock_api.user.repository.UserSessionRepository;
 import java.time.Duration;
@@ -33,6 +35,7 @@ import java.util.Objects;
 import java.util.UUID;
 import lombok.RequiredArgsConstructor;
 import org.springframework.beans.factory.annotation.Value;
+import org.springframework.context.annotation.Lazy;
 import org.springframework.context.i18n.LocaleContextHolder;
 import org.springframework.security.authentication.AuthenticationManager;
 import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
@@ -51,9 +54,14 @@ public class AuthenticationService {
 
   private final UserRepository userRepository;
   private final UserSessionRepository userSessionRepository;
+  private final OauthAccountRepository oauthAccountRepository;
   private final PasswordEncoder passwordEncoder;
   private final JwtService jwtService;
-  private final AuthenticationManager authenticationManager;
+
+  // @Lazy : évite un cycle d'initialisation avec SecurityConfig (Spring Security résout
+  // AuthenticationManager en scrutant tous les beans @EnableGlobalAuthentication, dont
+  // SecurityConfig, qui dépend transitivement de ce service via les handlers OAuth2).
+  @Lazy private final AuthenticationManager authenticationManager;
   private final TokenService tokenService;
   private final EmailService emailService;
   private final UserMapper userMapper;
@@ -147,9 +155,73 @@ public class AuthenticationService {
             (User) authentication.getPrincipal(),
             "Le principal authentifié ne peut pas être null après une authentification réussie");
 
+    return issueTokens(user, request.isRememberMe(), userAgent);
+  }
+
+  /**
+   * Connexion via un fournisseur OAuth2 (Google...). Réutilise le compte déjà lié à ce fournisseur
+   * s'il existe ; sinon rattache un compte existant de même email, ou en crée un nouveau (activé
+   * d'office, sans mot de passe, l'email étant déjà vérifié par le fournisseur).
+   */
+  @Transactional
+  public LoginResponse loginWithOAuth2(
+      String provider,
+      String providerUserId,
+      String email,
+      String firstName,
+      String lastName,
+      String avatarUrl,
+      String userAgent) {
+    User user =
+        oauthAccountRepository
+            .findByProviderAndProviderUserId(provider, providerUserId)
+            .map(OauthAccount::getUser)
+            .orElseGet(
+                () ->
+                    linkOrCreateOAuthUser(
+                        provider, providerUserId, email, firstName, lastName, avatarUrl));
+
+    return issueTokens(user, false, userAgent);
+  }
+
+  private User linkOrCreateOAuthUser(
+      String provider,
+      String providerUserId,
+      String email,
+      String firstName,
+      String lastName,
+      String avatarUrl) {
+    User user =
+        userRepository
+            .findByEmail(email)
+            .orElseGet(
+                () ->
+                    userRepository.save(
+                        User.builder()
+                            .email(email)
+                            .firstName(firstName != null ? firstName : email)
+                            .lastName(lastName != null ? lastName : "")
+                            .avatarUrl(avatarUrl)
+                            .role(Role.USER)
+                            .active(true)
+                            .emailConfirmedAt(Instant.now())
+                            .preferredLocale(LocaleContextHolder.getLocale().getLanguage())
+                            .build()));
+
+    oauthAccountRepository.save(
+        OauthAccount.builder()
+            .user(user)
+            .provider(provider)
+            .providerUserId(providerUserId)
+            .providerEmail(email)
+            .build());
+
+    return user;
+  }
+
+  private LoginResponse issueTokens(User user, boolean rememberMe, String userAgent) {
     String rawRefreshToken = UUID.randomUUID().toString();
-    long sessionExpiration =
-        request.isRememberMe() ? rememberMeSessionExpiration : defaultSessionExpiration;
+    long sessionExpiration = rememberMe ? rememberMeSessionExpiration : defaultSessionExpiration;
 
     userSessionRepository.save(
         UserSession.builder()
