@@ -3,6 +3,7 @@ package fr.stockshop.stock_api.user.controller;
 import fr.stockshop.stock_api.user.dto.AuthResponse;
 import fr.stockshop.stock_api.user.dto.ConfirmEmailRequest;
 import fr.stockshop.stock_api.user.dto.ForgotPasswordRequest;
+import fr.stockshop.stock_api.user.dto.LinkDecisionRequest;
 import fr.stockshop.stock_api.user.dto.LoginRequest;
 import fr.stockshop.stock_api.user.dto.LoginResponse;
 import fr.stockshop.stock_api.user.dto.RefreshTokenRequest;
@@ -88,6 +89,16 @@ public class AuthController {
   public ResponseEntity<Void> resetPassword(@Valid @RequestBody ResetPasswordRequest request) {
     authenticationService.resetPassword(request);
     return ResponseEntity.ok().build();
+  }
+
+  @PostMapping("/oauth2/link-decision")
+  @Operation(
+      summary =
+          "Confirmer ou refuser la liaison d'un compte Google à un compte local existant de même email")
+  public ResponseEntity<LoginResponse> resolveOAuth2LinkDecision(
+      @Valid @RequestBody LinkDecisionRequest request,
+      @RequestHeader(value = "User-Agent", required = false) String userAgent) {
+    return ResponseEntity.ok(authenticationService.resolveOAuth2LinkDecision(request, userAgent));
   }
 
   @GetMapping("/oauth2/google")
