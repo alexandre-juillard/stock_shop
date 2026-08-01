@@ -2,6 +2,7 @@ package fr.stockshop.stock_api.user.service;
 
 import fr.stockshop.stock_api.exception.AccountAlreadyActiveException;
 import fr.stockshop.stock_api.exception.EmailAlreadyExistsException;
+import fr.stockshop.stock_api.exception.InvalidLinkContextException;
 import fr.stockshop.stock_api.exception.InvalidTokenException;
 import fr.stockshop.stock_api.exception.ResetTokenExpiredException;
 import fr.stockshop.stock_api.exception.ResetTokenNotFoundException;
@@ -14,24 +15,32 @@ import fr.stockshop.stock_api.security.jwt.JwtService;
 import fr.stockshop.stock_api.user.dto.AuthResponse;
 import fr.stockshop.stock_api.user.dto.ConfirmEmailRequest;
 import fr.stockshop.stock_api.user.dto.ForgotPasswordRequest;
+import fr.stockshop.stock_api.user.dto.LinkDecision;
+import fr.stockshop.stock_api.user.dto.LinkDecisionRequest;
 import fr.stockshop.stock_api.user.dto.LoginRequest;
 import fr.stockshop.stock_api.user.dto.LoginResponse;
+import fr.stockshop.stock_api.user.dto.OAuth2LoginOutcome;
 import fr.stockshop.stock_api.user.dto.RefreshTokenRequest;
 import fr.stockshop.stock_api.user.dto.RegisterRequest;
 import fr.stockshop.stock_api.user.dto.ResendConfirmationRequest;
 import fr.stockshop.stock_api.user.dto.ResetPasswordRequest;
 import fr.stockshop.stock_api.user.dto.UserResponse;
 import fr.stockshop.stock_api.user.entity.OauthAccount;
+import fr.stockshop.stock_api.user.entity.OauthLinkContext;
+import fr.stockshop.stock_api.user.entity.OauthLinkDecision;
 import fr.stockshop.stock_api.user.entity.Role;
 import fr.stockshop.stock_api.user.entity.User;
 import fr.stockshop.stock_api.user.entity.UserSession;
 import fr.stockshop.stock_api.user.mapper.UserMapper;
 import fr.stockshop.stock_api.user.repository.OauthAccountRepository;
+import fr.stockshop.stock_api.user.repository.OauthLinkContextRepository;
+import fr.stockshop.stock_api.user.repository.OauthLinkDecisionRepository;
 import fr.stockshop.stock_api.user.repository.UserRepository;
 import fr.stockshop.stock_api.user.repository.UserSessionRepository;
 import java.time.Duration;
 import java.time.Instant;
 import java.util.Objects;
+import java.util.Optional;
 import java.util.UUID;
 import lombok.RequiredArgsConstructor;
 import org.springframework.beans.factory.annotation.Value;
@@ -55,6 +64,8 @@ public class AuthenticationService {
   private final UserRepository userRepository;
   private final UserSessionRepository userSessionRepository;
   private final OauthAccountRepository oauthAccountRepository;
+  private final OauthLinkContextRepository oauthLinkContextRepository;
+  private final OauthLinkDecisionRepository oauthLinkDecisionRepository;
   private final PasswordEncoder passwordEncoder;
   private final JwtService jwtService;
 
@@ -77,6 +88,9 @@ public class AuthenticationService {
 
   @Value("${app.mail.reset-token-expiration:1h}")
   private Duration resetTokenExpiration;
+
+  @Value("${app.oauth2.link-context-expiration:10m}")
+  private Duration linkContextExpiration;
 
   @Transactional
   public UserResponse register(RegisterRequest request) {
@@ -160,11 +174,12 @@ public class AuthenticationService {
 
   /**
    * Connexion via un fournisseur OAuth2 (Google...). Réutilise le compte déjà lié à ce fournisseur
-   * s'il existe ; sinon rattache un compte existant de même email, ou en crée un nouveau (activé
-   * d'office, sans mot de passe, l'email étant déjà vérifié par le fournisseur).
+   * s'il existe ; sinon, si l'email correspond à un compte local déjà actif sans décision de
+   * liaison connue, une confirmation est demandée (voir {@link #resolveOAuth2LinkDecision}) plutôt
+   * que d'émettre des jetons directement.
    */
   @Transactional
-  public LoginResponse loginWithOAuth2(
+  public OAuth2LoginOutcome loginWithOAuth2(
       String provider,
       String providerUserId,
       String email,
@@ -172,51 +187,189 @@ public class AuthenticationService {
       String lastName,
       String avatarUrl,
       String userAgent) {
-    User user =
+    Optional<User> alreadyLinkedUser =
         oauthAccountRepository
             .findByProviderAndProviderUserId(provider, providerUserId)
-            .map(OauthAccount::getUser)
-            .orElseGet(
-                () ->
-                    linkOrCreateOAuthUser(
-                        provider, providerUserId, email, firstName, lastName, avatarUrl));
+            .map(OauthAccount::getUser);
+    if (alreadyLinkedUser.isPresent()) {
+      return OAuth2LoginOutcome.loggedIn(issueTokens(alreadyLinkedUser.get(), false, userAgent));
+    }
 
-    return issueTokens(user, false, userAgent);
+    Optional<User> matchingLocalUser = userRepository.findByEmail(email);
+    if (matchingLocalUser.isEmpty()) {
+      User newUser = createOAuthUser(email, firstName, lastName, avatarUrl);
+      linkOAuthAccount(newUser, provider, providerUserId, email);
+      return OAuth2LoginOutcome.loggedIn(issueTokens(newUser, false, userAgent));
+    }
+
+    User localUser = matchingLocalUser.get();
+
+    if (!localUser.isActive()) {
+      // Compte pas encore activé : liaison automatique et activation, sans alerte.
+      localUser.setActive(true);
+      userRepository.save(localUser);
+      linkOAuthAccount(localUser, provider, providerUserId, email);
+      return OAuth2LoginOutcome.loggedIn(issueTokens(localUser, false, userAgent));
+    }
+
+    Optional<OauthLinkDecision> existingDecision =
+        oauthLinkDecisionRepository.findByUser_IdAndProviderAndProviderUserId(
+            localUser.getId(), provider, providerUserId);
+    if (existingDecision.isPresent()) {
+      User resolvedUser =
+          applyDecision(
+              existingDecision.get(),
+              localUser,
+              provider,
+              providerUserId,
+              email,
+              firstName,
+              lastName,
+              avatarUrl);
+      return OAuth2LoginOutcome.loggedIn(issueTokens(resolvedUser, false, userAgent));
+    }
+
+    String rawLinkContext = tokenService.generateToken();
+    oauthLinkContextRepository.save(
+        OauthLinkContext.builder()
+            .tokenHash(tokenService.hashToken(rawLinkContext))
+            .targetUser(localUser)
+            .provider(provider)
+            .providerUserId(providerUserId)
+            .providerEmail(email)
+            .firstName(firstName)
+            .lastName(lastName)
+            .avatarUrl(avatarUrl)
+            .expiresAt(Instant.now().plus(linkContextExpiration))
+            .build());
+
+    return OAuth2LoginOutcome.linkRequired(rawLinkContext);
   }
 
-  private User linkOrCreateOAuthUser(
+  /**
+   * Résout une proposition de liaison de compte OAuth2 (POST /api/auth/oauth2/link-decision) : lie
+   * le compte tiers au compte local existant, ou crée un compte indépendant si l'utilisateur refuse
+   * la liaison. Le linkContext est à usage unique et supprimé après résolution.
+   */
+  @Transactional(noRollbackFor = InvalidLinkContextException.class)
+  public LoginResponse resolveOAuth2LinkDecision(LinkDecisionRequest request, String userAgent) {
+    String tokenHash = tokenService.hashToken(request.linkContext());
+    OauthLinkContext context =
+        oauthLinkContextRepository
+            .findByTokenHash(tokenHash)
+            .orElseThrow(InvalidLinkContextException::new);
+
+    if (context.getExpiresAt().isBefore(Instant.now())) {
+      oauthLinkContextRepository.delete(context);
+      throw new InvalidLinkContextException();
+    }
+
+    User targetUser = context.getTargetUser();
+    boolean linked = request.decision() == LinkDecision.LINK;
+
+    User resultUser;
+    if (linked) {
+      linkOAuthAccount(
+          targetUser,
+          context.getProvider(),
+          context.getProviderUserId(),
+          context.getProviderEmail());
+      resultUser = targetUser;
+    } else {
+      resultUser =
+          createIndependentOAuthUser(
+              context.getProvider(),
+              context.getProviderUserId(),
+              context.getProviderEmail(),
+              context.getFirstName(),
+              context.getLastName(),
+              context.getAvatarUrl());
+    }
+
+    oauthLinkDecisionRepository.save(
+        OauthLinkDecision.builder()
+            .user(targetUser)
+            .provider(context.getProvider())
+            .providerUserId(context.getProviderUserId())
+            .linked(linked)
+            .build());
+    oauthLinkContextRepository.delete(context);
+
+    return issueTokens(resultUser, false, userAgent);
+  }
+
+  private User applyDecision(
+      OauthLinkDecision decision,
+      User localUser,
       String provider,
       String providerUserId,
       String email,
       String firstName,
       String lastName,
       String avatarUrl) {
-    User user =
-        userRepository
-            .findByEmail(email)
-            .orElseGet(
-                () ->
-                    userRepository.save(
-                        User.builder()
-                            .email(email)
-                            .firstName(firstName != null ? firstName : email)
-                            .lastName(lastName != null ? lastName : "")
-                            .avatarUrl(avatarUrl)
-                            .role(Role.USER)
-                            .active(true)
-                            .emailConfirmedAt(Instant.now())
-                            .preferredLocale(LocaleContextHolder.getLocale().getLanguage())
-                            .build()));
+    if (decision.isLinked()) {
+      linkOAuthAccount(localUser, provider, providerUserId, email);
+      return localUser;
+    }
+    return createIndependentOAuthUser(
+        provider, providerUserId, email, firstName, lastName, avatarUrl);
+  }
 
+  /**
+   * Crée un compte OAuth2 totalement indépendant d'un compte local existant de même email. Comme
+   * {@code users.email} est unique en base, cette adresse ne peut pas être réutilisée telle quelle
+   * pour un second compte : un alias dérivé est utilisé pour la connexion, tandis que l'email réel
+   * du fournisseur reste tracé dans {@code oauth_accounts.provider_email}.
+   */
+  private User createIndependentOAuthUser(
+      String provider,
+      String providerUserId,
+      String providerEmail,
+      String firstName,
+      String lastName,
+      String avatarUrl) {
+    User newUser =
+        createOAuthUser(
+            buildIndependentAccountEmail(providerEmail, provider, providerUserId),
+            firstName,
+            lastName,
+            avatarUrl);
+    linkOAuthAccount(newUser, provider, providerUserId, providerEmail);
+    return newUser;
+  }
+
+  private String buildIndependentAccountEmail(
+      String providerEmail, String provider, String providerUserId) {
+    int atIndex = providerEmail.indexOf('@');
+    String alias = provider + "-" + providerUserId;
+    return atIndex < 0
+        ? alias + "@oauth.local"
+        : providerEmail.substring(0, atIndex) + "+" + alias + providerEmail.substring(atIndex);
+  }
+
+  private User createOAuthUser(String email, String firstName, String lastName, String avatarUrl) {
+    return userRepository.save(
+        User.builder()
+            .email(email)
+            .firstName(firstName != null ? firstName : email)
+            .lastName(lastName != null ? lastName : "")
+            .avatarUrl(avatarUrl)
+            .role(Role.USER)
+            .active(true)
+            .emailConfirmedAt(Instant.now())
+            .preferredLocale(LocaleContextHolder.getLocale().getLanguage())
+            .build());
+  }
+
+  private void linkOAuthAccount(
+      User user, String provider, String providerUserId, String providerEmail) {
     oauthAccountRepository.save(
         OauthAccount.builder()
             .user(user)
             .provider(provider)
             .providerUserId(providerUserId)
-            .providerEmail(email)
+            .providerEmail(providerEmail)
             .build());
-
-    return user;
   }
 
   private LoginResponse issueTokens(User user, boolean rememberMe, String userAgent) {
