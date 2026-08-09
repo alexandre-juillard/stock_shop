@@ -17,6 +17,7 @@ import org.springframework.web.HttpMediaTypeNotSupportedException;
 import org.springframework.web.bind.MethodArgumentNotValidException;
 import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
+import org.springframework.web.multipart.MaxUploadSizeExceededException;
 import org.springframework.web.servlet.resource.NoResourceFoundException;
 
 /**
@@ -117,6 +118,21 @@ public class GlobalExceptionHandler {
             request.getRequestURI(),
             Map.of());
     return ResponseEntity.status(HttpStatus.NOT_FOUND).body(error);
+  }
+
+  @ExceptionHandler(MaxUploadSizeExceededException.class)
+  public ResponseEntity<ApiError> handleUploadTooLarge(
+      MaxUploadSizeExceededException ex, HttpServletRequest request) {
+    int statutHttp = 413;
+    ApiError error =
+        new ApiError(
+            Instant.now(),
+            statutHttp,
+            "Payload Too Large",
+            translate("error.avatar.tooLarge"),
+            request.getRequestURI(),
+            Map.of());
+    return ResponseEntity.status(statutHttp).body(error);
   }
 
   @ExceptionHandler(Exception.class)

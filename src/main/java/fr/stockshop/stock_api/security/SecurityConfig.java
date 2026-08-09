@@ -40,6 +40,7 @@ public class SecurityConfig {
     "/api/auth/forgot-password",
     "/api/auth/reset-password",
     "/api/auth/oauth2/**",
+    "/uploads/avatars/**",
     "/api/health",
     "/actuator/health",
     "/actuator/health/**",
@@ -60,7 +61,7 @@ public class SecurityConfig {
   private final OAuth2AuthenticationFailureHandler oAuth2AuthenticationFailureHandler;
 
   @Bean
-  public SecurityFilterChain securityFilterChain(HttpSecurity http) throws Exception {
+  public SecurityFilterChain securityFilterChain(HttpSecurity http) {
     http.csrf(AbstractHttpConfigurer::disable)
         .cors(cors -> cors.configurationSource(corsConfigurationSource()))
         .sessionManagement(sm -> sm.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
