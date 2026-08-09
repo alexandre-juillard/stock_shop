@@ -6,6 +6,7 @@ import fr.stockshop.stock_api.exception.UnsupportedLocaleException;
 import fr.stockshop.stock_api.user.dto.AvatarResponse;
 import fr.stockshop.stock_api.user.dto.UpdateLocaleRequest;
 import fr.stockshop.stock_api.user.dto.UpdateProfileRequest;
+import fr.stockshop.stock_api.user.dto.UpdateSettingsRequest;
 import fr.stockshop.stock_api.user.dto.UserProfileResponse;
 import fr.stockshop.stock_api.user.entity.User;
 import fr.stockshop.stock_api.user.mapper.UserMapper;
@@ -60,6 +61,18 @@ public class UserService {
       currentUser.setLastName(request.lastName());
     }
 
+    userRepository.save(currentUser);
+    return userMapper.toProfileResponse(currentUser);
+  }
+
+  @Transactional
+  public UserProfileResponse updateSettings(User currentUser, UpdateSettingsRequest request) {
+    if (request.theme() != null) {
+      currentUser.setTheme(request.theme());
+    }
+    if (request.expirationAlertDays() != null) {
+      currentUser.setExpirationAlertDays(request.expirationAlertDays());
+    }
     userRepository.save(currentUser);
     return userMapper.toProfileResponse(currentUser);
   }
