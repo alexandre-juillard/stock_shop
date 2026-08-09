@@ -78,6 +78,14 @@ public class UserService {
   }
 
   @Transactional
+  public void deleteAccount(User currentUser) {
+    if (currentUser.getAvatarUrl() != null) {
+      avatarStorageService.deleteAvatar(currentUser.getAvatarUrl());
+    }
+    userRepository.delete(currentUser);
+  }
+
+  @Transactional
   public AvatarResponse uploadAvatar(User currentUser, MultipartFile fichier) {
     String avatarUrl = avatarStorageService.saveAvatar(currentUser.getId(), fichier);
     currentUser.setAvatarUrl(avatarUrl);

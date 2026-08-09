@@ -12,6 +12,7 @@ import org.springframework.security.authentication.UsernamePasswordAuthenticatio
 import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.security.core.userdetails.UserDetails;
 import org.springframework.security.core.userdetails.UserDetailsService;
+import org.springframework.security.core.userdetails.UsernameNotFoundException;
 import org.springframework.security.web.authentication.WebAuthenticationDetailsSource;
 import org.springframework.stereotype.Component;
 import org.springframework.web.filter.OncePerRequestFilter;
@@ -57,9 +58,9 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
           SecurityContextHolder.getContext().setAuthentication(authToken);
         }
       }
-    } catch (JwtException | IllegalArgumentException ex) {
-      // Token invalide, malformé ou expiré : la requête continue non authentifiée,
-      // Spring Security renverra un 401 via le point d'entrée si l'endpoint est protégé.
+    } catch (JwtException | IllegalArgumentException | UsernameNotFoundException ex) {
+      // Token invalide, malformé, expiré ou utilisateur supprimé : la requête continue
+      // non authentifiée, Spring Security renverra un 401 sur endpoint protégé.
       SecurityContextHolder.clearContext();
     }
 

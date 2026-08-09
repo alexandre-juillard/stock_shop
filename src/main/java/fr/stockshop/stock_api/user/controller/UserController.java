@@ -78,4 +78,11 @@ public class UserController {
     userService.deleteAvatar(currentUser);
     return ResponseEntity.noContent().build();
   }
+
+  @DeleteMapping
+  @Operation(summary = "Supprimer définitivement le compte connecté et toutes ses données")
+  public ResponseEntity<Void> deleteAccount(@AuthenticationPrincipal User currentUser) {
+    userService.deleteAccount(currentUser);
+    return ResponseEntity.noContent().build();
+  }
 }
