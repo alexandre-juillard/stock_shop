@@ -7,7 +7,9 @@ WORKDIR /app
 # Copie des fichiers de dépendances en premier pour profiter du cache Docker
 COPY .mvn/ .mvn/
 COPY mvnw pom.xml ./
-RUN chmod +x mvnw && ./mvnw dependency:go-offline -B
+# dependency:go-offline échoue parfois en CI (buildx) selon la résolution des plugins.
+# Cette combinaison garde l'effet de cache tout en étant plus robuste.
+RUN chmod +x mvnw && ./mvnw -B dependency:resolve dependency:resolve-plugins
 
 # Copie des sources et build du jar (tests exécutés en amont dans la CI)
 COPY src ./src
