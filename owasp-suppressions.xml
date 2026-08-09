@@ -32,6 +32,19 @@
 
     <suppress>
         <notes><![CDATA[
+        CVE-2026-66299 (Tomcat WebSocket chat example) touche l'application examples de
+        Tomcat. Cette application Spring Boot embarquee n'expose pas examples/ ni le chat
+        d'exemple ; seule l'application metier est deployee. L'avis Apache indique aussi
+        que les utilisateurs ayant retire l'application examples ne sont pas affectes.
+        Le correctif sera integre des publication de tomcat-embed-core 11.0.25 sur Maven
+        Central, version qui n'est pas encore disponible a date.
+        ]]></notes>
+        <packageUrl regex="true">^pkg:maven/org\.apache\.tomcat\.embed/tomcat\-embed\-core@11\.0\.24$</packageUrl>
+        <cve>CVE-2026-66299</cve>
+    </suppress>
+
+    <suppress>
+        <notes><![CDATA[
         brace-expansion (transitif de commitizen -> cz-conventional-changelog -> glob ->
         minimatch, presente dans package-lock.json) est une devDependency npm utilisee
         uniquement pour l'outillage local de convention de commit (voir CONTRIBUTING.md :
