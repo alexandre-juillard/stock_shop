@@ -28,6 +28,11 @@ spring:
           timeout: 5000
           writetimeout: 5000
 
+  servlet:
+    multipart:
+      max-file-size: ${SPRING_SERVLET_MULTIPART_MAX_FILE_SIZE:5MB}
+      max-request-size: ${SPRING_SERVLET_MULTIPART_MAX_REQUEST_SIZE:5MB}
+
   security:
     oauth2:
       client:
@@ -79,6 +84,10 @@ app:
   oauth2:
     # Durée de validité du linkContext proposé lors d'une liaison de compte OAuth2 (AUTH-007).
     link-context-expiration: ${OAUTH2_LINK_CONTEXT_EXPIRATION:10m}
+  storage:
+    # Répertoire de stockage local des avatars en développement / première version.
+    avatar-directory: ${AVATAR_STORAGE_DIR:uploads/avatars}
+    avatar-max-size: ${AVATAR_MAX_SIZE:5MB}
   frontend:
     # Base URL de l'application front (utilisée pour construire les liens envoyés par email).
     base-url: ${FRONTEND_BASE_URL:http://localhost:3000}

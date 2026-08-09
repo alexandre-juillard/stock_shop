@@ -52,8 +52,12 @@ services:
       FRONTEND_BASE_URL: ${FRONTEND_BASE_URL:-http://localhost:3000}
       GOOGLE_CLIENT_ID: ${GOOGLE_CLIENT_ID:-}
       GOOGLE_CLIENT_SECRET: ${GOOGLE_CLIENT_SECRET:-}
+      AVATAR_STORAGE_DIR: ${AVATAR_STORAGE_DIR:-/app/uploads/avatars}
+      AVATAR_MAX_SIZE: ${AVATAR_MAX_SIZE:-5MB}
     ports:
       - "${SERVER_PORT:-8080}:8080"
+    volumes:
+      - stock-api-avatars:/app/uploads/avatars
     networks:
       - stock-api-network
 
@@ -86,8 +90,8 @@ services:
 volumes:
   stock-api-db-data:
   stock-api-pgadmin-data:
+  stock-api-avatars:
 
 networks:
   stock-api-network:
     driver: bridge
-
