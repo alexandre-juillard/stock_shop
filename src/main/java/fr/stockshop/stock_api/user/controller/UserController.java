@@ -3,6 +3,7 @@ package fr.stockshop.stock_api.user.controller;
 import fr.stockshop.stock_api.user.dto.AvatarResponse;
 import fr.stockshop.stock_api.user.dto.UpdateLocaleRequest;
 import fr.stockshop.stock_api.user.dto.UpdateProfileRequest;
+import fr.stockshop.stock_api.user.dto.UpdateSettingsRequest;
 import fr.stockshop.stock_api.user.dto.UserProfileResponse;
 import fr.stockshop.stock_api.user.entity.User;
 import fr.stockshop.stock_api.user.service.UserService;
@@ -54,6 +55,14 @@ public class UserController {
       @AuthenticationPrincipal User currentUser, @Valid @RequestBody UpdateLocaleRequest request) {
     userService.updatePreferredLocale(currentUser, request);
     return ResponseEntity.noContent().build();
+  }
+
+  @PutMapping("/settings")
+  @Operation(summary = "Modifier le thème et le délai d'alerte d'expiration du compte connecté")
+  public ResponseEntity<UserProfileResponse> updateSettings(
+      @AuthenticationPrincipal User currentUser,
+      @Valid @RequestBody UpdateSettingsRequest request) {
+    return ResponseEntity.ok(userService.updateSettings(currentUser, request));
   }
 
   @PostMapping(value = "/avatar", consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
