@@ -40,7 +40,7 @@
 			(voir owasp-suppressions.xml pour les faux positifs documentés).
 		-->
 		<postgresql.version>42.7.13</postgresql.version> <!-- CVE-2026-54291 -->
-		<tomcat.version>11.0.24</tomcat.version> <!-- CVE-2026-53434 / 55276 / 59083 / 59084 / 53404 -->
+		<tomcat.version>11.0.24</tomcat.version> <!-- CVE-2026-53434 / 55276 / 59083 / 59084 / 53404 / 66299 (correctif amont annonce en 11.0.25, non publie sur Maven Central a ce jour) -->
 		<log4j2.version>2.25.5</log4j2.version> <!-- CVE-2026-49844 -->
 		<jackson-2-bom.version>2.21.5</jackson-2-bom.version> <!-- CVE-2026-54515 -->
 	</properties>
