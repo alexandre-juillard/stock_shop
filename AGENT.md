@@ -41,3 +41,7 @@ architecture package : plutot que controller/ service/ repository/, on adoptera 
 respecter les bonnes pratiques en java : DTO en passant par un Mapper qui utilise MapStruct. Le code ne doit jamais changer entre les environnements en utilisant les profils spring (application.yaml, application-dev, application-test, application-prod). Nommage variables et fonctions en francais, explicite. Commenter les fonctions si besoin
 
 docker : Dockerfile pour l’api, docker-compose pour le dev, volumes pour la bdd, un profil dev et un profil prod, des healthcheck et dépendances au démarrage.
+
+ne lance jamais en terminal de tests ou de compilation, demande toujours l'autorisation avant.
+
+pas de commentaires excessifs ni décoratifs, uniquement si nécessaire pour expliquer un choix technique ou une logique complexe.
