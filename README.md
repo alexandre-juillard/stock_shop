@@ -176,24 +176,10 @@ Principales tables : `users`, `oauth_accounts`, `oauth_link_decisions`, `user_se
 
 Identifiants en `UUID`, timestamps en `TIMESTAMPTZ`, suppression en cascade documentée par table (voir commentaires dans les scripts SQL).
 
-## Endpoints d'authentification
+## Endpoints
 
-| Méthode | Endpoint                        | Description                                       |
-|---------|-----------------------------------|-----------------------------------------------------|
-| POST    | `/api/auth/register`             | Inscription (email + mot de passe), compte inactif tant que l'email n'est pas confirmé |
-| POST    | `/api/auth/confirm-email`        | Active le compte à partir du token reçu par email |
-| POST    | `/api/auth/resend-confirmation`  | Renvoie un email de confirmation (invalide l'ancien token) |
-| POST    | `/api/auth/login`                | Connexion, retourne access + refresh token        |
-| POST    | `/api/auth/refresh`              | Rotation du refresh token                          |
-| POST    | `/api/auth/logout`               | Révocation du refresh token                        |
-| POST    | `/api/auth/forgot-password`      | Demande un email de réinitialisation de mot de passe |
-| POST    | `/api/auth/reset-password`       | Choisit un nouveau mot de passe à partir du token reçu par email |
-| GET     | `/api/auth/oauth2/google`        | Redirige vers la page de consentement Google      |
-| GET     | `/api/auth/oauth2/callback`      | Callback Google : crée/relie le compte et retourne les jetons |
-| PATCH   | `/api/users/me/locale`           | Modifie la langue préférée du compte connecté     |
-
-Voir [Authentification OAuth2 Google](#authentification-oauth2-google) pour la configuration côté
-Google Cloud Console.
+La liste détaillée des routes applicatives n'est pas publiée dans ce README.
+Pour la configuration OAuth2 Google, voir la section ci-dessous.
 
 ## Authentification OAuth2 Google
 
