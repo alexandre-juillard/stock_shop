@@ -142,6 +142,16 @@ public class ProductService {
     }
   }
 
+  @Transactional
+  public void deleteProduct(User currentUser, UUID productId) {
+    Product product =
+        productRepository
+            .findById(productId)
+            .orElseThrow(() -> new ProductNotFoundException(productId));
+    assertOwnership(product, currentUser);
+    productRepository.delete(product);
+  }
+
   private void assertOwnership(Product product, User currentUser) {
     if (!product.getUser().getId().equals(currentUser.getId())) {
       throw new AccessDeniedException("Product does not belong to current user");
