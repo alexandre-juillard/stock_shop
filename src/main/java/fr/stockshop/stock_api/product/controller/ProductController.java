@@ -14,6 +14,7 @@ import lombok.RequiredArgsConstructor;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
+import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
@@ -64,5 +65,13 @@ public class ProductController {
       @PathVariable UUID id,
       @RequestBody UpdateProductRequest request) {
     return ResponseEntity.ok(productService.updateProduct(currentUser, id, request));
+  }
+
+  @DeleteMapping("/{id}")
+  @Operation(summary = "Supprimer un ingrédient du catalogue personnel")
+  public ResponseEntity<Void> deleteProduct(
+      @AuthenticationPrincipal User currentUser, @PathVariable UUID id) {
+    productService.deleteProduct(currentUser, id);
+    return ResponseEntity.noContent().build();
   }
 }
