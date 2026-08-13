@@ -5,6 +5,7 @@ import fr.stockshop.stock_api.product.dto.ProductPhotoResponse;
 import fr.stockshop.stock_api.product.dto.ProductPhotoUploadRequest;
 import fr.stockshop.stock_api.product.dto.ProductResponse;
 import fr.stockshop.stock_api.product.dto.UpdateProductRequest;
+import fr.stockshop.stock_api.product.dto.UpdateProductVisibilityRequest;
 import fr.stockshop.stock_api.product.service.ProductService;
 import fr.stockshop.stock_api.user.entity.User;
 import io.swagger.v3.oas.annotations.Operation;
@@ -21,6 +22,7 @@ import org.springframework.http.ResponseEntity;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.PatchMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.PutMapping;
@@ -80,6 +82,15 @@ public class ProductController {
       @AuthenticationPrincipal User currentUser, @PathVariable UUID id) {
     productService.deleteProduct(currentUser, id);
     return ResponseEntity.noContent().build();
+  }
+
+  @PatchMapping("/{id}/visibility")
+  @Operation(summary = "Modifier la visibilité d'un ingrédient")
+  public ResponseEntity<ProductResponse> updateProductVisibility(
+      @AuthenticationPrincipal User currentUser,
+      @PathVariable UUID id,
+      @Valid @RequestBody UpdateProductVisibilityRequest request) {
+    return ResponseEntity.ok(productService.updateVisibility(currentUser, id, request));
   }
 
   @PostMapping(value = "/{id}/photo", consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
