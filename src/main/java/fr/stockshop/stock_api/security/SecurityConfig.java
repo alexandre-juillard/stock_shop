@@ -41,6 +41,7 @@ public class SecurityConfig {
     "/api/auth/reset-password",
     "/api/auth/oauth2/**",
     "/uploads/avatars/**",
+    "/uploads/products/**",
     "/api/health",
     "/actuator/health",
     "/actuator/health/**",
