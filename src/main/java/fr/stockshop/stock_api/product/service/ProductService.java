@@ -13,6 +13,7 @@ import fr.stockshop.stock_api.product.dto.CreateProductRequest;
 import fr.stockshop.stock_api.product.dto.ProductPhotoResponse;
 import fr.stockshop.stock_api.product.dto.ProductResponse;
 import fr.stockshop.stock_api.product.dto.UpdateProductRequest;
+import fr.stockshop.stock_api.product.dto.UpdateProductVisibilityRequest;
 import fr.stockshop.stock_api.product.entity.Product;
 import fr.stockshop.stock_api.product.mapper.ProductMapper;
 import fr.stockshop.stock_api.product.repository.ProductRepository;
@@ -188,6 +189,18 @@ public class ProductService {
     productPhotoStorageService.deletePhoto(product.getPhotoUrl());
     product.setPhotoUrl(null);
     productRepository.save(product);
+  }
+
+  @Transactional
+  public ProductResponse updateVisibility(
+      User currentUser, UUID productId, UpdateProductVisibilityRequest request) {
+    Product product =
+        productRepository
+            .findById(productId)
+            .orElseThrow(() -> new ProductNotFoundException(productId));
+    assertOwnership(product, currentUser);
+    product.setVisible(request.isVisible());
+    return productMapper.toResponse(productRepository.save(product));
   }
 
   private void assertOwnership(Product product, User currentUser) {
