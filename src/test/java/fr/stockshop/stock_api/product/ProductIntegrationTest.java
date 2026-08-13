@@ -1,6 +1,7 @@
 package fr.stockshop.stock_api.product;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.delete;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.put;
@@ -230,7 +231,6 @@ class ProductIntegrationTest {
     insertProduct(user.getId(), catId, "Abricot", typeId, unitId, UUID.randomUUID(), true);
     insertProduct(user.getId(), catId, "Melon", typeId, unitId, UUID.randomUUID(), true);
 
-    // Produit d'un autre utilisateur — ne doit pas apparaître
     String otherEmail = "products-other-" + UUID.randomUUID() + "@test.fr";
     registerActivateAndLogin(otherEmail);
     User other = userRepository.findByEmail(otherEmail).orElseThrow();
@@ -428,6 +428,100 @@ class ProductIntegrationTest {
                 .header("Authorization", "Bearer " + outsiderToken)
                 .contentType(MediaType.APPLICATION_JSON)
                 .content(objectMapper.writeValueAsString(Map.of("name", "Copie"))))
+        .andExpect(status().isForbidden());
+  }
+
+  @Test
+  void deleteProductReturnsNoContentAndCascadesRelatedRows() throws Exception {
+    String email = "products-delete-" + UUID.randomUUID() + "@test.fr";
+    String token = registerActivateAndLogin(email);
+    User user = userRepository.findByEmail(email).orElseThrow();
+    UUID categoryId = saveCategory(user, "À supprimer", "#445566");
+    UUID typeId = weightTypeId();
+    UUID unitId = kgUnitId(typeId);
+    UUID productId = UUID.randomUUID();
+
+    insertProduct(user.getId(), categoryId, "Tomates", typeId, unitId, productId, true);
+
+    UUID stockItemId = UUID.randomUUID();
+    jdbcTemplate.update(
+        "insert into stock_items (id, user_id, product_id, quantity, created_at, updated_at)"
+            + " values (?, ?, ?, ?, now(), now())",
+        stockItemId,
+        user.getId(),
+        productId,
+        3);
+
+    UUID shoppingListItemId = UUID.randomUUID();
+    jdbcTemplate.update(
+        "insert into shopping_list_items (id, user_id, product_id, is_checked, added_automatically, added_at)"
+            + " values (?, ?, ?, ?, ?, now())",
+        shoppingListItemId,
+        user.getId(),
+        productId,
+        false,
+        false);
+
+    UUID recipeId = UUID.randomUUID();
+    jdbcTemplate.update(
+        "insert into recipes (id, user_id, name, created_at, updated_at) values (?, ?, ?, now(), now())",
+        recipeId,
+        user.getId(),
+        "Sauce tomate");
+    UUID recipeIngredientId = UUID.randomUUID();
+    jdbcTemplate.update(
+        "insert into recipe_ingredients (id, recipe_id, product_id, quantity, unit_id)"
+            + " values (?, ?, ?, ?, ?)",
+        recipeIngredientId,
+        recipeId,
+        productId,
+        2,
+        unitId);
+
+    mockMvc
+        .perform(delete("/api/products/" + productId).header("Authorization", "Bearer " + token))
+        .andExpect(status().isNoContent());
+
+    Integer productCount =
+        jdbcTemplate.queryForObject(
+            "select count(*) from products where id = ?", Integer.class, productId);
+    Integer stockCount =
+        jdbcTemplate.queryForObject(
+            "select count(*) from stock_items where product_id = ?", Integer.class, productId);
+    Integer shoppingCount =
+        jdbcTemplate.queryForObject(
+            "select count(*) from shopping_list_items where product_id = ?",
+            Integer.class,
+            productId);
+    Integer recipeIngredientCount =
+        jdbcTemplate.queryForObject(
+            "select count(*) from recipe_ingredients where product_id = ?",
+            Integer.class,
+            productId);
+
+    assertThat(productCount).isZero();
+    assertThat(stockCount).isZero();
+    assertThat(shoppingCount).isZero();
+    assertThat(recipeIngredientCount).isZero();
+  }
+
+  @Test
+  void deleteProductOwnedByAnotherUserReturnsForbidden() throws Exception {
+    String ownerEmail = "products-owner-delete-" + UUID.randomUUID() + "@test.fr";
+    registerActivateAndLogin(ownerEmail);
+    User owner = userRepository.findByEmail(ownerEmail).orElseThrow();
+    UUID categoryId = saveCategory(owner, "Privé", "#778800");
+    UUID typeId = weightTypeId();
+    UUID unitId = kgUnitId(typeId);
+    UUID productId = UUID.randomUUID();
+    insertProduct(owner.getId(), categoryId, "Confidentiel", typeId, unitId, productId, true);
+
+    String outsiderToken =
+        registerActivateAndLogin("products-outsider-delete-" + UUID.randomUUID() + "@test.fr");
+
+    mockMvc
+        .perform(
+            delete("/api/products/" + productId).header("Authorization", "Bearer " + outsiderToken))
         .andExpect(status().isForbidden());
   }
 
