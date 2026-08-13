@@ -1,17 +1,22 @@
 package fr.stockshop.stock_api.product.controller;
 
 import fr.stockshop.stock_api.product.dto.CreateProductRequest;
+import fr.stockshop.stock_api.product.dto.ProductPhotoResponse;
+import fr.stockshop.stock_api.product.dto.ProductPhotoUploadRequest;
 import fr.stockshop.stock_api.product.dto.ProductResponse;
 import fr.stockshop.stock_api.product.dto.UpdateProductRequest;
 import fr.stockshop.stock_api.product.service.ProductService;
 import fr.stockshop.stock_api.user.entity.User;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.tags.Tag;
+import io.swagger.v3.oas.annotations.media.Content;
+import io.swagger.v3.oas.annotations.media.Schema;
 import jakarta.validation.Valid;
 import java.util.List;
 import java.util.UUID;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.HttpStatus;
+import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.web.bind.annotation.DeleteMapping;
@@ -22,7 +27,9 @@ import org.springframework.web.bind.annotation.PutMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
+import org.springframework.web.bind.annotation.RequestPart;
 import org.springframework.web.bind.annotation.RestController;
+import org.springframework.web.multipart.MultipartFile;
 
 @RestController
 @RequestMapping("/api/products")
@@ -72,6 +79,29 @@ public class ProductController {
   public ResponseEntity<Void> deleteProduct(
       @AuthenticationPrincipal User currentUser, @PathVariable UUID id) {
     productService.deleteProduct(currentUser, id);
+    return ResponseEntity.noContent().build();
+  }
+
+  @PostMapping(value = "/{id}/photo", consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
+  @Operation(summary = "Uploader ou remplacer la photo d'un ingrédient")
+  @io.swagger.v3.oas.annotations.parameters.RequestBody(
+      required = true,
+      content =
+          @Content(
+              mediaType = MediaType.MULTIPART_FORM_DATA_VALUE,
+              schema = @Schema(implementation = ProductPhotoUploadRequest.class)))
+  public ResponseEntity<ProductPhotoResponse> uploadProductPhoto(
+      @AuthenticationPrincipal User currentUser,
+      @PathVariable UUID id,
+      @RequestPart("file") MultipartFile file) {
+    return ResponseEntity.ok(productService.uploadPhoto(currentUser, id, file));
+  }
+
+  @DeleteMapping("/{id}/photo")
+  @Operation(summary = "Supprimer la photo d'un ingrédient")
+  public ResponseEntity<Void> deleteProductPhoto(
+      @AuthenticationPrincipal User currentUser, @PathVariable UUID id) {
+    productService.deletePhoto(currentUser, id);
     return ResponseEntity.noContent().build();
   }
 }
