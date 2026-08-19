@@ -454,6 +454,76 @@ class ProductIntegrationTest {
   }
 
   @Test
+  void getProductRecipesReturnsRecipesContainingIngredient() throws Exception {
+    String email = "products-recipes-ok-" + UUID.randomUUID() + "@test.fr";
+    String token = registerActivateAndLogin(email);
+    User user = userRepository.findByEmail(email).orElseThrow();
+    UUID categoryId = saveCategory(user, "Recettes", "#114477");
+    UUID typeId = weightTypeId();
+    UUID unitId = kgUnitId(typeId);
+    UUID productId = UUID.randomUUID();
+    insertProduct(user.getId(), categoryId, "Basilic", typeId, unitId, productId, true);
+
+    insertRecipeIngredient(user.getId(), productId, unitId, "Pesto maison", 0.2);
+    insertRecipeIngredient(user.getId(), productId, unitId, "Salade de pates", 0.1);
+    UUID otherProductId = UUID.randomUUID();
+    insertProduct(user.getId(), categoryId, "Tomate", typeId, unitId, otherProductId, true);
+    insertRecipeIngredient(user.getId(), otherProductId, unitId, "Sauce tomate", 0.5);
+
+    mockMvc
+        .perform(
+            get("/api/products/" + productId + "/recipes")
+                .header("Authorization", "Bearer " + token))
+        .andExpect(status().isOk())
+        .andExpect(jsonPath("$.length()").value(2))
+        .andExpect(
+            jsonPath("$[*].name")
+                .value(
+                    org.hamcrest.Matchers.containsInAnyOrder("Pesto maison", "Salade de pates")));
+  }
+
+  @Test
+  void getProductRecipesReturnsEmptyListWhenIngredientIsNotUsed() throws Exception {
+    String email = "products-recipes-empty-" + UUID.randomUUID() + "@test.fr";
+    String token = registerActivateAndLogin(email);
+    User user = userRepository.findByEmail(email).orElseThrow();
+    UUID categoryId = saveCategory(user, "Recettes", "#225588");
+    UUID typeId = weightTypeId();
+    UUID unitId = kgUnitId(typeId);
+    UUID productId = UUID.randomUUID();
+    insertProduct(user.getId(), categoryId, "Persil", typeId, unitId, productId, true);
+
+    mockMvc
+        .perform(
+            get("/api/products/" + productId + "/recipes")
+                .header("Authorization", "Bearer " + token))
+        .andExpect(status().isOk())
+        .andExpect(jsonPath("$.length()").value(0));
+  }
+
+  @Test
+  void getProductRecipesOwnedByAnotherUserReturnsForbidden() throws Exception {
+    String ownerEmail = "products-recipes-owner-" + UUID.randomUUID() + "@test.fr";
+    registerActivateAndLogin(ownerEmail);
+    User owner = userRepository.findByEmail(ownerEmail).orElseThrow();
+    UUID categoryId = saveCategory(owner, "Recettes", "#336699");
+    UUID typeId = weightTypeId();
+    UUID unitId = kgUnitId(typeId);
+    UUID productId = UUID.randomUUID();
+    insertProduct(owner.getId(), categoryId, "Ail", typeId, unitId, productId, true);
+    insertRecipeIngredient(owner.getId(), productId, unitId, "Beurre d'ail", 0.1);
+
+    String outsiderToken =
+        registerActivateAndLogin("products-recipes-outsider-" + UUID.randomUUID() + "@test.fr");
+
+    mockMvc
+        .perform(
+            get("/api/products/" + productId + "/recipes")
+                .header("Authorization", "Bearer " + outsiderToken))
+        .andExpect(status().isForbidden());
+  }
+
+  @Test
   void deleteProductReturnsNoContentAndCascadesRelatedRows() throws Exception {
     String email = "products-delete-" + UUID.randomUUID() + "@test.fr";
     String token = registerActivateAndLogin(email);
@@ -778,6 +848,23 @@ class ProductIntegrationTest {
         typeId,
         unitId,
         visible);
+  }
+
+  private void insertRecipeIngredient(
+      UUID userId, UUID productId, UUID unitId, String recipeName, double quantity) {
+    UUID recipeId = UUID.randomUUID();
+    jdbcTemplate.update(
+        "insert into recipes (id, user_id, name, created_at, updated_at) values (?, ?, ?, now(), now())",
+        recipeId,
+        userId,
+        recipeName);
+    jdbcTemplate.update(
+        "insert into recipe_ingredients (id, recipe_id, product_id, quantity, unit_id) values (?, ?, ?, ?, ?)",
+        UUID.randomUUID(),
+        recipeId,
+        productId,
+        quantity,
+        unitId);
   }
 
   private String registerActivateAndLogin(String email) throws Exception {

@@ -7,6 +7,8 @@ import fr.stockshop.stock_api.product.dto.ProductResponse;
 import fr.stockshop.stock_api.product.dto.UpdateProductRequest;
 import fr.stockshop.stock_api.product.dto.UpdateProductVisibilityRequest;
 import fr.stockshop.stock_api.product.service.ProductService;
+import fr.stockshop.stock_api.recipe.dto.RecipeResponse;
+import fr.stockshop.stock_api.recipe.service.RecipeService;
 import fr.stockshop.stock_api.user.entity.User;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.media.Content;
@@ -40,6 +42,7 @@ import org.springframework.web.multipart.MultipartFile;
 public class ProductController {
 
   private final ProductService productService;
+  private final RecipeService recipeService;
 
   @GetMapping
   @Operation(
@@ -114,5 +117,12 @@ public class ProductController {
       @AuthenticationPrincipal User currentUser, @PathVariable UUID id) {
     productService.deletePhoto(currentUser, id);
     return ResponseEntity.noContent().build();
+  }
+
+  @GetMapping("/{id}/recipes")
+  @Operation(summary = "Lister les recettes contenant cet ingrédient")
+  public ResponseEntity<List<RecipeResponse>> findRecipesByIngredient(
+      @AuthenticationPrincipal User currentUser, @PathVariable UUID id) {
+    return ResponseEntity.ok(recipeService.findRecipesByIngredient(currentUser, id));
   }
 }
