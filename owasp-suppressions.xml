@@ -45,6 +45,19 @@
 
     <suppress>
         <notes><![CDATA[
+        CVE-2026-66299 (Tomcat WebSocket chat example) est egalement remontee sur
+        tomcat-embed-websocket via le meme CPE generique "cpe:2.3:a:apache:tomcat".
+        Meme raisonnement que la suppression tomcat-embed-core ci-dessus : l'application
+        examples/websocket-chat n'est pas embarquee dans cette application Spring Boot,
+        seul le module WebSocket standard est utilise. Correctif attendu avec
+        tomcat-embed-websocket 11.0.25 des sa publication sur Maven Central.
+        ]]></notes>
+        <packageUrl regex="true">^pkg:maven/org\.apache\.tomcat\.embed/tomcat\-embed\-websocket@11\.0\.24$</packageUrl>
+        <cve>CVE-2026-66299</cve>
+    </suppress>
+
+    <suppress>
+        <notes><![CDATA[
         brace-expansion (transitif de commitizen -> cz-conventional-changelog -> glob ->
         minimatch, presente dans package-lock.json) est une devDependency npm utilisee
         uniquement pour l'outillage local de convention de commit (voir CONTRIBUTING.md :
