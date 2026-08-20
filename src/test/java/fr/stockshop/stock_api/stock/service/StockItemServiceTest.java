@@ -1,11 +1,23 @@
 package fr.stockshop.stock_api.stock.service;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
 
 import fr.stockshop.stock_api.category.dto.CategoryResponse;
+import fr.stockshop.stock_api.exception.ProductNotFoundException;
+import fr.stockshop.stock_api.exception.StockItemAlreadyExistsException;
+import fr.stockshop.stock_api.product.entity.Product;
+import fr.stockshop.stock_api.product.repository.ProductRepository;
 import fr.stockshop.stock_api.quantity.dto.QuantityUnitResponse;
+import fr.stockshop.stock_api.shoppinglist.entity.ShoppingListItem;
+import fr.stockshop.stock_api.shoppinglist.repository.ShoppingListItemRepository;
+import fr.stockshop.stock_api.stock.dto.CreateStockItemRequest;
 import fr.stockshop.stock_api.stock.dto.StockItemProductSummary;
 import fr.stockshop.stock_api.stock.dto.StockItemResponse;
 import fr.stockshop.stock_api.stock.entity.StockItem;
@@ -16,17 +28,21 @@ import fr.stockshop.stock_api.user.entity.User;
 import java.math.BigDecimal;
 import java.time.LocalDate;
 import java.util.List;
+import java.util.Optional;
 import java.util.UUID;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
+import org.springframework.security.access.AccessDeniedException;
 
 @ExtendWith(MockitoExtension.class)
 class StockItemServiceTest {
 
   @Mock private StockItemRepository stockItemRepository;
+  @Mock private ProductRepository productRepository;
+  @Mock private ShoppingListItemRepository shoppingListItemRepository;
   @Mock private StockItemMapper stockItemMapper;
 
   @InjectMocks private StockItemService stockItemService;
@@ -138,5 +154,170 @@ class StockItemServiceTest {
     stockItemService.listStockItems(currentUser, null);
 
     verify(stockItemMapper).toResponse(item, 7);
+  }
+
+  @Test
+  void createStockItemReturnsCreatedResponseWhenProductIsOwnedAndNotAlreadyInStock() {
+    UUID userId = UUID.randomUUID();
+    UUID productId = UUID.randomUUID();
+    User currentUser = User.builder().id(userId).expirationAlertDays(3).build();
+    Product product = Product.builder().id(productId).name("Pomme").user(currentUser).build();
+    CreateStockItemRequest request =
+        new CreateStockItemRequest(productId, BigDecimal.TEN, null, null);
+    StockItemResponse expectedResponse = response(StockItemStatus.OK, null, "Pomme");
+
+    when(productRepository.findById(productId)).thenReturn(Optional.of(product));
+    when(stockItemRepository.existsByUserAndProduct(currentUser, product)).thenReturn(false);
+    when(stockItemRepository.save(any(StockItem.class)))
+        .thenAnswer(invocation -> invocation.getArgument(0));
+    when(stockItemMapper.toResponse(any(StockItem.class), eq(3))).thenReturn(expectedResponse);
+
+    StockItemResponse result = stockItemService.createStockItem(currentUser, request);
+
+    assertThat(result).isEqualTo(expectedResponse);
+    verify(stockItemRepository).save(any(StockItem.class));
+    verifyNoInteractions(shoppingListItemRepository);
+  }
+
+  @Test
+  void createStockItemThrowsConflictWhenProductAlreadyInStock() {
+    UUID userId = UUID.randomUUID();
+    UUID productId = UUID.randomUUID();
+    User currentUser = User.builder().id(userId).expirationAlertDays(3).build();
+    Product product = Product.builder().id(productId).name("Lait").user(currentUser).build();
+    CreateStockItemRequest request =
+        new CreateStockItemRequest(productId, BigDecimal.TEN, null, null);
+
+    when(productRepository.findById(productId)).thenReturn(Optional.of(product));
+    when(stockItemRepository.existsByUserAndProduct(currentUser, product)).thenReturn(true);
+
+    assertThatThrownBy(() -> stockItemService.createStockItem(currentUser, request))
+        .isInstanceOf(StockItemAlreadyExistsException.class);
+
+    verify(stockItemRepository, never()).save(any());
+  }
+
+  @Test
+  void createStockItemThrowsNotFoundWhenProductDoesNotExist() {
+    UUID productId = UUID.randomUUID();
+    User currentUser = User.builder().id(UUID.randomUUID()).build();
+    CreateStockItemRequest request =
+        new CreateStockItemRequest(productId, BigDecimal.TEN, null, null);
+
+    when(productRepository.findById(productId)).thenReturn(Optional.empty());
+
+    assertThatThrownBy(() -> stockItemService.createStockItem(currentUser, request))
+        .isInstanceOf(ProductNotFoundException.class);
+
+    verifyNoInteractions(stockItemRepository);
+  }
+
+  @Test
+  void createStockItemThrowsForbiddenWhenProductOwnedByAnotherUser() {
+    UUID ownerId = UUID.randomUUID();
+    UUID requesterId = UUID.randomUUID();
+    UUID productId = UUID.randomUUID();
+    User currentUser = User.builder().id(requesterId).build();
+    Product product =
+        Product.builder()
+            .id(productId)
+            .name("Secret")
+            .user(User.builder().id(ownerId).build())
+            .build();
+    CreateStockItemRequest request =
+        new CreateStockItemRequest(productId, BigDecimal.TEN, null, null);
+
+    when(productRepository.findById(productId)).thenReturn(Optional.of(product));
+
+    assertThatThrownBy(() -> stockItemService.createStockItem(currentUser, request))
+        .isInstanceOf(AccessDeniedException.class);
+
+    verifyNoInteractions(stockItemRepository);
+  }
+
+  @Test
+  void createStockItemAddsToShoppingListWhenQuantityBelowOrEqualThreshold() {
+    UUID userId = UUID.randomUUID();
+    UUID productId = UUID.randomUUID();
+    User currentUser = User.builder().id(userId).expirationAlertDays(3).build();
+    Product product = Product.builder().id(productId).name("Riz").user(currentUser).build();
+    CreateStockItemRequest request =
+        new CreateStockItemRequest(productId, new BigDecimal("2"), new BigDecimal("2"), null);
+
+    when(productRepository.findById(productId)).thenReturn(Optional.of(product));
+    when(stockItemRepository.existsByUserAndProduct(currentUser, product)).thenReturn(false);
+    when(stockItemRepository.save(any(StockItem.class)))
+        .thenAnswer(invocation -> invocation.getArgument(0));
+    when(stockItemMapper.toResponse(any(StockItem.class), eq(3)))
+        .thenReturn(response(StockItemStatus.LOW, null, "Riz"));
+    when(shoppingListItemRepository.existsByUserAndProduct(currentUser, product)).thenReturn(false);
+
+    stockItemService.createStockItem(currentUser, request);
+
+    verify(shoppingListItemRepository).save(any(ShoppingListItem.class));
+  }
+
+  @Test
+  void createStockItemDoesNotAddToShoppingListWhenAlreadyPresent() {
+    UUID userId = UUID.randomUUID();
+    UUID productId = UUID.randomUUID();
+    User currentUser = User.builder().id(userId).expirationAlertDays(3).build();
+    Product product = Product.builder().id(productId).name("Riz").user(currentUser).build();
+    CreateStockItemRequest request =
+        new CreateStockItemRequest(productId, new BigDecimal("1"), new BigDecimal("2"), null);
+
+    when(productRepository.findById(productId)).thenReturn(Optional.of(product));
+    when(stockItemRepository.existsByUserAndProduct(currentUser, product)).thenReturn(false);
+    when(stockItemRepository.save(any(StockItem.class)))
+        .thenAnswer(invocation -> invocation.getArgument(0));
+    when(stockItemMapper.toResponse(any(StockItem.class), eq(3)))
+        .thenReturn(response(StockItemStatus.LOW, null, "Riz"));
+    when(shoppingListItemRepository.existsByUserAndProduct(currentUser, product)).thenReturn(true);
+
+    stockItemService.createStockItem(currentUser, request);
+
+    verify(shoppingListItemRepository, never()).save(any());
+  }
+
+  @Test
+  void createStockItemDoesNotAddToShoppingListWhenQuantityAboveThreshold() {
+    UUID userId = UUID.randomUUID();
+    UUID productId = UUID.randomUUID();
+    User currentUser = User.builder().id(userId).expirationAlertDays(3).build();
+    Product product = Product.builder().id(productId).name("Riz").user(currentUser).build();
+    CreateStockItemRequest request =
+        new CreateStockItemRequest(productId, new BigDecimal("5"), new BigDecimal("2"), null);
+
+    when(productRepository.findById(productId)).thenReturn(Optional.of(product));
+    when(stockItemRepository.existsByUserAndProduct(currentUser, product)).thenReturn(false);
+    when(stockItemRepository.save(any(StockItem.class)))
+        .thenAnswer(invocation -> invocation.getArgument(0));
+    when(stockItemMapper.toResponse(any(StockItem.class), eq(3)))
+        .thenReturn(response(StockItemStatus.OK, null, "Riz"));
+
+    stockItemService.createStockItem(currentUser, request);
+
+    verifyNoInteractions(shoppingListItemRepository);
+  }
+
+  @Test
+  void createStockItemDoesNotAddToShoppingListWhenNoThresholdProvided() {
+    UUID userId = UUID.randomUUID();
+    UUID productId = UUID.randomUUID();
+    User currentUser = User.builder().id(userId).expirationAlertDays(3).build();
+    Product product = Product.builder().id(productId).name("Riz").user(currentUser).build();
+    CreateStockItemRequest request =
+        new CreateStockItemRequest(productId, BigDecimal.ZERO, null, null);
+
+    when(productRepository.findById(productId)).thenReturn(Optional.of(product));
+    when(stockItemRepository.existsByUserAndProduct(currentUser, product)).thenReturn(false);
+    when(stockItemRepository.save(any(StockItem.class)))
+        .thenAnswer(invocation -> invocation.getArgument(0));
+    when(stockItemMapper.toResponse(any(StockItem.class), eq(3)))
+        .thenReturn(response(StockItemStatus.OK, null, "Riz"));
+
+    stockItemService.createStockItem(currentUser, request);
+
+    verifyNoInteractions(shoppingListItemRepository);
   }
 }
