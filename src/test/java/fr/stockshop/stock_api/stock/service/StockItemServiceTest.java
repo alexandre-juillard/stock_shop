@@ -12,6 +12,7 @@ import static org.mockito.Mockito.when;
 import fr.stockshop.stock_api.category.dto.CategoryResponse;
 import fr.stockshop.stock_api.exception.ProductNotFoundException;
 import fr.stockshop.stock_api.exception.StockItemAlreadyExistsException;
+import fr.stockshop.stock_api.exception.StockItemNotFoundException;
 import fr.stockshop.stock_api.product.entity.Product;
 import fr.stockshop.stock_api.product.repository.ProductRepository;
 import fr.stockshop.stock_api.quantity.dto.QuantityUnitResponse;
@@ -20,6 +21,7 @@ import fr.stockshop.stock_api.shoppinglist.repository.ShoppingListItemRepository
 import fr.stockshop.stock_api.stock.dto.CreateStockItemRequest;
 import fr.stockshop.stock_api.stock.dto.StockItemProductSummary;
 import fr.stockshop.stock_api.stock.dto.StockItemResponse;
+import fr.stockshop.stock_api.stock.dto.UpdateStockItemQuantityRequest;
 import fr.stockshop.stock_api.stock.entity.StockItem;
 import fr.stockshop.stock_api.stock.entity.StockItemStatus;
 import fr.stockshop.stock_api.stock.mapper.StockItemMapper;
@@ -317,6 +319,179 @@ class StockItemServiceTest {
         .thenReturn(response(StockItemStatus.OK, null, "Riz"));
 
     stockItemService.createStockItem(currentUser, request);
+
+    verifyNoInteractions(shoppingListItemRepository);
+  }
+
+  @Test
+  void updateQuantityUpdatesQuantityAndReturns200Payload() {
+    UUID userId = UUID.randomUUID();
+    UUID stockItemId = UUID.randomUUID();
+    User currentUser = User.builder().id(userId).expirationAlertDays(3).build();
+    Product product = Product.builder().id(UUID.randomUUID()).name("Pomme").build();
+    StockItem stockItem =
+        StockItem.builder()
+            .id(stockItemId)
+            .user(currentUser)
+            .product(product)
+            .quantity(BigDecimal.TEN)
+            .build();
+    UpdateStockItemQuantityRequest request =
+        new UpdateStockItemQuantityRequest(new BigDecimal("4"));
+    StockItemResponse expectedResponse = response(StockItemStatus.OK, null, "Pomme");
+
+    when(stockItemRepository.findById(stockItemId)).thenReturn(Optional.of(stockItem));
+    when(stockItemRepository.save(stockItem)).thenReturn(stockItem);
+    when(stockItemMapper.toResponse(stockItem, 3)).thenReturn(expectedResponse);
+
+    StockItemResponse result = stockItemService.updateQuantity(currentUser, stockItemId, request);
+
+    assertThat(result).isEqualTo(expectedResponse);
+    assertThat(stockItem.getQuantity()).isEqualByComparingTo("4");
+    verifyNoInteractions(shoppingListItemRepository);
+  }
+
+  @Test
+  void updateQuantityThrowsNotFoundWhenStockItemDoesNotExist() {
+    UUID stockItemId = UUID.randomUUID();
+    User currentUser = User.builder().id(UUID.randomUUID()).build();
+    UpdateStockItemQuantityRequest request = new UpdateStockItemQuantityRequest(BigDecimal.ONE);
+
+    when(stockItemRepository.findById(stockItemId)).thenReturn(Optional.empty());
+
+    assertThatThrownBy(() -> stockItemService.updateQuantity(currentUser, stockItemId, request))
+        .isInstanceOf(StockItemNotFoundException.class);
+
+    verify(stockItemRepository, never()).save(any());
+  }
+
+  @Test
+  void updateQuantityThrowsForbiddenWhenStockItemOwnedByAnotherUser() {
+    UUID ownerId = UUID.randomUUID();
+    UUID requesterId = UUID.randomUUID();
+    UUID stockItemId = UUID.randomUUID();
+    User currentUser = User.builder().id(requesterId).build();
+    StockItem stockItem =
+        StockItem.builder()
+            .id(stockItemId)
+            .user(User.builder().id(ownerId).build())
+            .quantity(BigDecimal.TEN)
+            .build();
+    UpdateStockItemQuantityRequest request = new UpdateStockItemQuantityRequest(BigDecimal.ONE);
+
+    when(stockItemRepository.findById(stockItemId)).thenReturn(Optional.of(stockItem));
+
+    assertThatThrownBy(() -> stockItemService.updateQuantity(currentUser, stockItemId, request))
+        .isInstanceOf(AccessDeniedException.class);
+
+    verify(stockItemRepository, never()).save(any());
+  }
+
+  @Test
+  void updateQuantityAddsToShoppingListWhenNewQuantityBelowOrEqualThreshold() {
+    UUID userId = UUID.randomUUID();
+    UUID stockItemId = UUID.randomUUID();
+    User currentUser = User.builder().id(userId).expirationAlertDays(3).build();
+    Product product = Product.builder().id(UUID.randomUUID()).name("Riz").build();
+    StockItem stockItem =
+        StockItem.builder()
+            .id(stockItemId)
+            .user(currentUser)
+            .product(product)
+            .quantity(BigDecimal.TEN)
+            .lowThreshold(new BigDecimal("2"))
+            .build();
+    UpdateStockItemQuantityRequest request =
+        new UpdateStockItemQuantityRequest(new BigDecimal("2"));
+
+    when(stockItemRepository.findById(stockItemId)).thenReturn(Optional.of(stockItem));
+    when(stockItemRepository.save(stockItem)).thenReturn(stockItem);
+    when(stockItemMapper.toResponse(stockItem, 3))
+        .thenReturn(response(StockItemStatus.LOW, null, "Riz"));
+    when(shoppingListItemRepository.existsByUserAndProduct(currentUser, product)).thenReturn(false);
+
+    stockItemService.updateQuantity(currentUser, stockItemId, request);
+
+    verify(shoppingListItemRepository).save(any(ShoppingListItem.class));
+  }
+
+  @Test
+  void updateQuantityToZeroWithThresholdAddsToShoppingList() {
+    UUID userId = UUID.randomUUID();
+    UUID stockItemId = UUID.randomUUID();
+    User currentUser = User.builder().id(userId).expirationAlertDays(3).build();
+    Product product = Product.builder().id(UUID.randomUUID()).name("Lait").build();
+    StockItem stockItem =
+        StockItem.builder()
+            .id(stockItemId)
+            .user(currentUser)
+            .product(product)
+            .quantity(BigDecimal.TEN)
+            .lowThreshold(new BigDecimal("1"))
+            .build();
+    UpdateStockItemQuantityRequest request = new UpdateStockItemQuantityRequest(BigDecimal.ZERO);
+
+    when(stockItemRepository.findById(stockItemId)).thenReturn(Optional.of(stockItem));
+    when(stockItemRepository.save(stockItem)).thenReturn(stockItem);
+    when(stockItemMapper.toResponse(stockItem, 3))
+        .thenReturn(response(StockItemStatus.LOW, null, "Lait"));
+    when(shoppingListItemRepository.existsByUserAndProduct(currentUser, product)).thenReturn(false);
+
+    stockItemService.updateQuantity(currentUser, stockItemId, request);
+
+    verify(shoppingListItemRepository).save(any(ShoppingListItem.class));
+  }
+
+  @Test
+  void updateQuantityDoesNotAddToShoppingListWhenAlreadyPresent() {
+    UUID userId = UUID.randomUUID();
+    UUID stockItemId = UUID.randomUUID();
+    User currentUser = User.builder().id(userId).expirationAlertDays(3).build();
+    Product product = Product.builder().id(UUID.randomUUID()).name("Riz").build();
+    StockItem stockItem =
+        StockItem.builder()
+            .id(stockItemId)
+            .user(currentUser)
+            .product(product)
+            .quantity(BigDecimal.TEN)
+            .lowThreshold(new BigDecimal("2"))
+            .build();
+    UpdateStockItemQuantityRequest request = new UpdateStockItemQuantityRequest(BigDecimal.ONE);
+
+    when(stockItemRepository.findById(stockItemId)).thenReturn(Optional.of(stockItem));
+    when(stockItemRepository.save(stockItem)).thenReturn(stockItem);
+    when(stockItemMapper.toResponse(stockItem, 3))
+        .thenReturn(response(StockItemStatus.LOW, null, "Riz"));
+    when(shoppingListItemRepository.existsByUserAndProduct(currentUser, product)).thenReturn(true);
+
+    stockItemService.updateQuantity(currentUser, stockItemId, request);
+
+    verify(shoppingListItemRepository, never()).save(any());
+  }
+
+  @Test
+  void updateQuantityDoesNotAddToShoppingListWhenAboveThreshold() {
+    UUID userId = UUID.randomUUID();
+    UUID stockItemId = UUID.randomUUID();
+    User currentUser = User.builder().id(userId).expirationAlertDays(3).build();
+    Product product = Product.builder().id(UUID.randomUUID()).name("Riz").build();
+    StockItem stockItem =
+        StockItem.builder()
+            .id(stockItemId)
+            .user(currentUser)
+            .product(product)
+            .quantity(BigDecimal.TEN)
+            .lowThreshold(new BigDecimal("2"))
+            .build();
+    UpdateStockItemQuantityRequest request =
+        new UpdateStockItemQuantityRequest(new BigDecimal("5"));
+
+    when(stockItemRepository.findById(stockItemId)).thenReturn(Optional.of(stockItem));
+    when(stockItemRepository.save(stockItem)).thenReturn(stockItem);
+    when(stockItemMapper.toResponse(stockItem, 3))
+        .thenReturn(response(StockItemStatus.OK, null, "Riz"));
+
+    stockItemService.updateQuantity(currentUser, stockItemId, request);
 
     verifyNoInteractions(shoppingListItemRepository);
   }
