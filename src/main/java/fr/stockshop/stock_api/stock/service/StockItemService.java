@@ -2,12 +2,14 @@ package fr.stockshop.stock_api.stock.service;
 
 import fr.stockshop.stock_api.exception.ProductNotFoundException;
 import fr.stockshop.stock_api.exception.StockItemAlreadyExistsException;
+import fr.stockshop.stock_api.exception.StockItemNotFoundException;
 import fr.stockshop.stock_api.product.entity.Product;
 import fr.stockshop.stock_api.product.repository.ProductRepository;
 import fr.stockshop.stock_api.shoppinglist.entity.ShoppingListItem;
 import fr.stockshop.stock_api.shoppinglist.repository.ShoppingListItemRepository;
 import fr.stockshop.stock_api.stock.dto.CreateStockItemRequest;
 import fr.stockshop.stock_api.stock.dto.StockItemResponse;
+import fr.stockshop.stock_api.stock.dto.UpdateStockItemQuantityRequest;
 import fr.stockshop.stock_api.stock.entity.StockItem;
 import fr.stockshop.stock_api.stock.entity.StockItemStatus;
 import fr.stockshop.stock_api.stock.mapper.StockItemMapper;
@@ -15,6 +17,7 @@ import fr.stockshop.stock_api.stock.repository.StockItemRepository;
 import fr.stockshop.stock_api.user.entity.User;
 import java.util.Comparator;
 import java.util.List;
+import java.util.UUID;
 import lombok.RequiredArgsConstructor;
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.security.access.AccessDeniedException;
@@ -92,15 +95,42 @@ public class StockItemService {
 
     if (isBelowThreshold
         && !shoppingListItemRepository.existsByUserAndProduct(currentUser, product)) {
-      ShoppingListItem shoppingListItem =
-          ShoppingListItem.builder()
-              .user(currentUser)
-              .product(product)
-              .checked(false)
-              .addedAutomatically(true)
-              .build();
-      shoppingListItemRepository.save(shoppingListItem);
+      addToShoppingList(currentUser, product);
     }
+  }
+
+  @Transactional
+  public StockItemResponse updateQuantity(
+      User currentUser, UUID stockItemId, UpdateStockItemQuantityRequest request) {
+    StockItem stockItem =
+        stockItemRepository
+            .findById(stockItemId)
+            .orElseThrow(() -> new StockItemNotFoundException(stockItemId));
+    assertOwnership(stockItem, currentUser);
+
+    stockItem.setQuantity(request.quantity());
+    StockItem saved = stockItemRepository.save(stockItem);
+
+    boolean isBelowThreshold =
+        saved.getLowThreshold() != null
+            && saved.getQuantity().compareTo(saved.getLowThreshold()) <= 0;
+    if (isBelowThreshold
+        && !shoppingListItemRepository.existsByUserAndProduct(currentUser, saved.getProduct())) {
+      addToShoppingList(currentUser, saved.getProduct());
+    }
+
+    return stockItemMapper.toResponse(saved, currentUser.getExpirationAlertDays());
+  }
+
+  private void addToShoppingList(User currentUser, Product product) {
+    ShoppingListItem shoppingListItem =
+        ShoppingListItem.builder()
+            .user(currentUser)
+            .product(product)
+            .checked(false)
+            .addedAutomatically(true)
+            .build();
+    shoppingListItemRepository.save(shoppingListItem);
   }
 
   private List<StockItemResponse> mapAll(User currentUser) {
@@ -120,6 +150,12 @@ public class StockItemService {
   private void assertOwnership(Product product, User currentUser) {
     if (!product.getUser().getId().equals(currentUser.getId())) {
       throw new AccessDeniedException("Product does not belong to current user");
+    }
+  }
+
+  private void assertOwnership(StockItem stockItem, User currentUser) {
+    if (!stockItem.getUser().getId().equals(currentUser.getId())) {
+      throw new AccessDeniedException("Stock item does not belong to current user");
     }
   }
 }

@@ -2,6 +2,7 @@ package fr.stockshop.stock_api.stock;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.patch;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
@@ -386,6 +387,217 @@ class StockItemIntegrationTest {
         .andExpect(status().isNotFound());
   }
 
+  @Test
+  void updateQuantityReturns200WithUpdatedQuantity() throws Exception {
+    String email = "stock-qty-ok-" + UUID.randomUUID() + "@test.fr";
+    String token = registerActivateAndLogin(email);
+    User user = userRepository.findByEmail(email).orElseThrow();
+    UUID catId = saveCategory(user, "Fruits", "#101010");
+    UUID typeId = weightTypeId();
+    UUID unitId = kgUnitId(typeId);
+    UUID productId = insertProduct(user.getId(), catId, "Banane", typeId, unitId, true);
+    UUID stockItemId = insertStockItem(user.getId(), productId, BigDecimal.TEN, null, null);
+
+    mockMvc
+        .perform(
+            patch("/api/stock-items/" + stockItemId + "/quantity")
+                .header("Authorization", "Bearer " + token)
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(objectMapper.writeValueAsString(Map.of("quantity", 4))))
+        .andExpect(status().isOk())
+        .andExpect(jsonPath("$.id").value(stockItemId.toString()))
+        .andExpect(jsonPath("$.quantity").value(4));
+
+    java.math.BigDecimal storedQuantity =
+        jdbcTemplate.queryForObject(
+            "select quantity from stock_items where id = ?",
+            java.math.BigDecimal.class,
+            stockItemId);
+    assertThat(storedQuantity).isEqualByComparingTo("4");
+  }
+
+  @Test
+  void updateQuantityWithNegativeValueReturnsBadRequest() throws Exception {
+    String email = "stock-qty-neg-" + UUID.randomUUID() + "@test.fr";
+    String token = registerActivateAndLogin(email);
+    User user = userRepository.findByEmail(email).orElseThrow();
+    UUID catId = saveCategory(user, "Legumes", "#202020");
+    UUID typeId = weightTypeId();
+    UUID unitId = kgUnitId(typeId);
+    UUID productId = insertProduct(user.getId(), catId, "Poireau", typeId, unitId, true);
+    UUID stockItemId = insertStockItem(user.getId(), productId, BigDecimal.TEN, null, null);
+
+    mockMvc
+        .perform(
+            patch("/api/stock-items/" + stockItemId + "/quantity")
+                .header("Authorization", "Bearer " + token)
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(objectMapper.writeValueAsString(Map.of("quantity", -1))))
+        .andExpect(status().isBadRequest());
+  }
+
+  @Test
+  void updateQuantityBelowOrEqualThresholdAddsToShoppingList() throws Exception {
+    String email = "stock-qty-shopping-" + UUID.randomUUID() + "@test.fr";
+    String token = registerActivateAndLogin(email);
+    User user = userRepository.findByEmail(email).orElseThrow();
+    UUID catId = saveCategory(user, "Epicerie", "#303030");
+    UUID typeId = weightTypeId();
+    UUID unitId = kgUnitId(typeId);
+    UUID productId = insertProduct(user.getId(), catId, "Pates", typeId, unitId, true);
+    UUID stockItemId =
+        insertStockItem(user.getId(), productId, BigDecimal.TEN, new BigDecimal("2"), null);
+
+    mockMvc
+        .perform(
+            patch("/api/stock-items/" + stockItemId + "/quantity")
+                .header("Authorization", "Bearer " + token)
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(objectMapper.writeValueAsString(Map.of("quantity", 2))))
+        .andExpect(status().isOk())
+        .andExpect(jsonPath("$.status").value("low"));
+
+    Integer shoppingCount =
+        jdbcTemplate.queryForObject(
+            "select count(*) from shopping_list_items where user_id = ? and product_id = ? and added_automatically = true",
+            Integer.class,
+            user.getId(),
+            productId);
+    assertThat(shoppingCount).isEqualTo(1);
+  }
+
+  @Test
+  void updateQuantityToZeroWithThresholdAddsToShoppingList() throws Exception {
+    String email = "stock-qty-zero-" + UUID.randomUUID() + "@test.fr";
+    String token = registerActivateAndLogin(email);
+    User user = userRepository.findByEmail(email).orElseThrow();
+    UUID catId = saveCategory(user, "Boulangerie", "#404040");
+    UUID typeId = weightTypeId();
+    UUID unitId = kgUnitId(typeId);
+    UUID productId = insertProduct(user.getId(), catId, "Pain", typeId, unitId, true);
+    UUID stockItemId =
+        insertStockItem(user.getId(), productId, BigDecimal.TEN, new BigDecimal("1"), null);
+
+    mockMvc
+        .perform(
+            patch("/api/stock-items/" + stockItemId + "/quantity")
+                .header("Authorization", "Bearer " + token)
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(objectMapper.writeValueAsString(Map.of("quantity", 0))))
+        .andExpect(status().isOk());
+
+    Integer shoppingCount =
+        jdbcTemplate.queryForObject(
+            "select count(*) from shopping_list_items where user_id = ? and product_id = ?",
+            Integer.class,
+            user.getId(),
+            productId);
+    assertThat(shoppingCount).isEqualTo(1);
+  }
+
+  @Test
+  void updateQuantityAboveThresholdDoesNotAddToShoppingList() throws Exception {
+    String email = "stock-qty-no-shopping-" + UUID.randomUUID() + "@test.fr";
+    String token = registerActivateAndLogin(email);
+    User user = userRepository.findByEmail(email).orElseThrow();
+    UUID catId = saveCategory(user, "Conserves", "#505050");
+    UUID typeId = weightTypeId();
+    UUID unitId = kgUnitId(typeId);
+    UUID productId = insertProduct(user.getId(), catId, "Haricots", typeId, unitId, true);
+    UUID stockItemId =
+        insertStockItem(user.getId(), productId, BigDecimal.TEN, new BigDecimal("2"), null);
+
+    mockMvc
+        .perform(
+            patch("/api/stock-items/" + stockItemId + "/quantity")
+                .header("Authorization", "Bearer " + token)
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(objectMapper.writeValueAsString(Map.of("quantity", 8))))
+        .andExpect(status().isOk())
+        .andExpect(jsonPath("$.status").value("ok"));
+
+    Integer shoppingCount =
+        jdbcTemplate.queryForObject(
+            "select count(*) from shopping_list_items where user_id = ? and product_id = ?",
+            Integer.class,
+            user.getId(),
+            productId);
+    assertThat(shoppingCount).isZero();
+  }
+
+  @Test
+  void updateQuantityDoesNotDuplicateShoppingListEntry() throws Exception {
+    String email = "stock-qty-no-dup-" + UUID.randomUUID() + "@test.fr";
+    String token = registerActivateAndLogin(email);
+    User user = userRepository.findByEmail(email).orElseThrow();
+    UUID catId = saveCategory(user, "Produits laitiers", "#606060");
+    UUID typeId = weightTypeId();
+    UUID unitId = kgUnitId(typeId);
+    UUID productId = insertProduct(user.getId(), catId, "Beurre", typeId, unitId, true);
+    UUID stockItemId =
+        insertStockItem(user.getId(), productId, new BigDecimal("1"), new BigDecimal("2"), null);
+    jdbcTemplate.update(
+        "insert into shopping_list_items (id, user_id, product_id, is_checked, added_automatically, added_at)"
+            + " values (?, ?, ?, ?, ?, now())",
+        UUID.randomUUID(),
+        user.getId(),
+        productId,
+        false,
+        true);
+
+    mockMvc
+        .perform(
+            patch("/api/stock-items/" + stockItemId + "/quantity")
+                .header("Authorization", "Bearer " + token)
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(objectMapper.writeValueAsString(Map.of("quantity", 0))))
+        .andExpect(status().isOk());
+
+    Integer shoppingCount =
+        jdbcTemplate.queryForObject(
+            "select count(*) from shopping_list_items where user_id = ? and product_id = ?",
+            Integer.class,
+            user.getId(),
+            productId);
+    assertThat(shoppingCount).isEqualTo(1);
+  }
+
+  @Test
+  void updateQuantityOwnedByAnotherUserReturnsForbidden() throws Exception {
+    String ownerEmail = "stock-qty-owner-" + UUID.randomUUID() + "@test.fr";
+    registerActivateAndLogin(ownerEmail);
+    User owner = userRepository.findByEmail(ownerEmail).orElseThrow();
+    UUID catId = saveCategory(owner, "Prive3", "#707070");
+    UUID typeId = weightTypeId();
+    UUID unitId = kgUnitId(typeId);
+    UUID productId = insertProduct(owner.getId(), catId, "Jambon", typeId, unitId, true);
+    UUID stockItemId = insertStockItem(owner.getId(), productId, BigDecimal.TEN, null, null);
+
+    String outsiderToken =
+        registerActivateAndLogin("stock-qty-outsider-" + UUID.randomUUID() + "@test.fr");
+
+    mockMvc
+        .perform(
+            patch("/api/stock-items/" + stockItemId + "/quantity")
+                .header("Authorization", "Bearer " + outsiderToken)
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(objectMapper.writeValueAsString(Map.of("quantity", 1))))
+        .andExpect(status().isForbidden());
+  }
+
+  @Test
+  void updateQuantityWithUnknownStockItemReturnsNotFound() throws Exception {
+    String token = registerActivateAndLogin("stock-qty-404-" + UUID.randomUUID() + "@test.fr");
+
+    mockMvc
+        .perform(
+            patch("/api/stock-items/" + UUID.randomUUID() + "/quantity")
+                .header("Authorization", "Bearer " + token)
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(objectMapper.writeValueAsString(Map.of("quantity", 1))))
+        .andExpect(status().isNotFound());
+  }
+
   private UUID weightTypeId() {
     return jdbcTemplate.queryForObject(
         "select id from quantity_types where code = ?", UUID.class, "weight");
@@ -421,21 +633,23 @@ class StockItemIntegrationTest {
     return productId;
   }
 
-  private void insertStockItem(
+  private UUID insertStockItem(
       UUID userId,
       UUID productId,
       BigDecimal quantity,
       BigDecimal lowThreshold,
       LocalDate expirationDate) {
+    UUID stockItemId = UUID.randomUUID();
     jdbcTemplate.update(
         "insert into stock_items (id, user_id, product_id, quantity, low_threshold, expiration_date, created_at, updated_at)"
             + " values (?, ?, ?, ?, ?, ?, now(), now())",
-        UUID.randomUUID(),
+        stockItemId,
         userId,
         productId,
         quantity,
         lowThreshold,
         expirationDate);
+    return stockItemId;
   }
 
   private String registerActivateAndLogin(String email) throws Exception {
