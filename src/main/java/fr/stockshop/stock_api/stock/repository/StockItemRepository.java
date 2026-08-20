@@ -1,5 +1,6 @@
 package fr.stockshop.stock_api.stock.repository;
 
+import fr.stockshop.stock_api.product.entity.Product;
 import fr.stockshop.stock_api.stock.entity.StockItem;
 import fr.stockshop.stock_api.user.entity.User;
 import java.util.List;
@@ -9,6 +10,8 @@ import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 
 public interface StockItemRepository extends JpaRepository<StockItem, UUID> {
+
+  boolean existsByUserAndProduct(User user, Product product);
 
   @Query(
       "SELECT s FROM StockItem s "
