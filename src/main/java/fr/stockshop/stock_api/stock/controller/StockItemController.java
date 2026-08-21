@@ -3,6 +3,7 @@ package fr.stockshop.stock_api.stock.controller;
 import fr.stockshop.stock_api.stock.dto.CreateStockItemRequest;
 import fr.stockshop.stock_api.stock.dto.StockItemResponse;
 import fr.stockshop.stock_api.stock.dto.UpdateStockItemQuantityRequest;
+import fr.stockshop.stock_api.stock.dto.UpdateStockItemThresholdRequest;
 import fr.stockshop.stock_api.stock.service.StockItemService;
 import fr.stockshop.stock_api.user.entity.User;
 import io.swagger.v3.oas.annotations.Operation;
@@ -66,5 +67,14 @@ public class StockItemController {
       @PathVariable UUID id,
       @Valid @RequestBody UpdateStockItemQuantityRequest request) {
     return ResponseEntity.ok(stockItemService.updateQuantity(currentUser, id, request));
+  }
+
+  @PatchMapping("/{id}/threshold")
+  @Operation(summary = "Définir ou supprimer le seuil bas d'un ingrédient en stock")
+  public ResponseEntity<StockItemResponse> updateThreshold(
+      @AuthenticationPrincipal User currentUser,
+      @PathVariable UUID id,
+      @Valid @RequestBody UpdateStockItemThresholdRequest request) {
+    return ResponseEntity.ok(stockItemService.updateThreshold(currentUser, id, request));
   }
 }
