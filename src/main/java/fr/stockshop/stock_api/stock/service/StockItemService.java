@@ -10,6 +10,7 @@ import fr.stockshop.stock_api.shoppinglist.repository.ShoppingListItemRepository
 import fr.stockshop.stock_api.stock.dto.CreateStockItemRequest;
 import fr.stockshop.stock_api.stock.dto.StockItemResponse;
 import fr.stockshop.stock_api.stock.dto.UpdateStockItemQuantityRequest;
+import fr.stockshop.stock_api.stock.dto.UpdateStockItemThresholdRequest;
 import fr.stockshop.stock_api.stock.entity.StockItem;
 import fr.stockshop.stock_api.stock.entity.StockItemStatus;
 import fr.stockshop.stock_api.stock.mapper.StockItemMapper;
@@ -79,24 +80,9 @@ public class StockItemService {
       throw new StockItemAlreadyExistsException(product.getName());
     }
 
-    addToShoppingListIfBelowThreshold(currentUser, product, request);
+    applyShoppingListRule(currentUser, saved);
 
     return stockItemMapper.toResponse(saved, currentUser.getExpirationAlertDays());
-  }
-
-  /**
-   * si la quantité initiale est déjà sous le seuil bas fourni, l'ingrédient est ajouté
-   * automatiquement à la liste de courses, sauf s'il y figure déjà.
-   */
-  private void addToShoppingListIfBelowThreshold(
-      User currentUser, Product product, CreateStockItemRequest request) {
-    boolean isBelowThreshold =
-        request.lowThreshold() != null && request.quantity().compareTo(request.lowThreshold()) <= 0;
-
-    if (isBelowThreshold
-        && !shoppingListItemRepository.existsByUserAndProduct(currentUser, product)) {
-      addToShoppingList(currentUser, product);
-    }
   }
 
   @Transactional
@@ -111,15 +97,43 @@ public class StockItemService {
     stockItem.setQuantity(request.quantity());
     StockItem saved = stockItemRepository.save(stockItem);
 
-    boolean isBelowThreshold =
-        saved.getLowThreshold() != null
-            && saved.getQuantity().compareTo(saved.getLowThreshold()) <= 0;
-    if (isBelowThreshold
-        && !shoppingListItemRepository.existsByUserAndProduct(currentUser, saved.getProduct())) {
-      addToShoppingList(currentUser, saved.getProduct());
-    }
+    applyShoppingListRule(currentUser, saved);
 
     return stockItemMapper.toResponse(saved, currentUser.getExpirationAlertDays());
+  }
+
+  @Transactional
+  public StockItemResponse updateThreshold(
+      User currentUser, UUID stockItemId, UpdateStockItemThresholdRequest request) {
+    StockItem stockItem =
+        stockItemRepository
+            .findById(stockItemId)
+            .orElseThrow(() -> new StockItemNotFoundException(stockItemId));
+    assertOwnership(stockItem, currentUser);
+
+    stockItem.setLowThreshold(request.lowThreshold());
+    StockItem saved = stockItemRepository.save(stockItem);
+
+    applyShoppingListRule(currentUser, saved);
+
+    return stockItemMapper.toResponse(saved, currentUser.getExpirationAlertDays());
+  }
+
+  /**
+   * ajoute automatiquement l'ingrédient à la liste de courses si sa quantité est désormais
+   * inférieure ou égale au seuil bas défini, sauf s'il y figure déjà. Ne retire jamais un
+   * ingrédient déjà présent, même si le seuil est supprimé (mis à null).
+   */
+  private void applyShoppingListRule(User currentUser, StockItem stockItem) {
+    boolean isBelowThreshold =
+        stockItem.getLowThreshold() != null
+            && stockItem.getQuantity().compareTo(stockItem.getLowThreshold()) <= 0;
+
+    if (isBelowThreshold
+        && !shoppingListItemRepository.existsByUserAndProduct(
+            currentUser, stockItem.getProduct())) {
+      addToShoppingList(currentUser, stockItem.getProduct());
+    }
   }
 
   private void addToShoppingList(User currentUser, Product product) {
