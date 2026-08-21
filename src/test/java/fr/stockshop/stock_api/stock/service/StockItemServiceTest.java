@@ -21,6 +21,7 @@ import fr.stockshop.stock_api.shoppinglist.repository.ShoppingListItemRepository
 import fr.stockshop.stock_api.stock.dto.CreateStockItemRequest;
 import fr.stockshop.stock_api.stock.dto.StockItemProductSummary;
 import fr.stockshop.stock_api.stock.dto.StockItemResponse;
+import fr.stockshop.stock_api.stock.dto.UpdateStockItemExpirationRequest;
 import fr.stockshop.stock_api.stock.dto.UpdateStockItemQuantityRequest;
 import fr.stockshop.stock_api.stock.dto.UpdateStockItemThresholdRequest;
 import fr.stockshop.stock_api.stock.entity.StockItem;
@@ -663,6 +664,123 @@ class StockItemServiceTest {
     when(stockItemRepository.findById(stockItemId)).thenReturn(Optional.of(stockItem));
 
     assertThatThrownBy(() -> stockItemService.updateThreshold(currentUser, stockItemId, request))
+        .isInstanceOf(AccessDeniedException.class);
+
+    verify(stockItemRepository, never()).save(any());
+  }
+
+  @Test
+  void updateExpirationSetsFutureDateAndReturns200Payload() {
+    UUID userId = UUID.randomUUID();
+    UUID stockItemId = UUID.randomUUID();
+    User currentUser = User.builder().id(userId).expirationAlertDays(3).build();
+    Product product = Product.builder().id(UUID.randomUUID()).name("Pomme").build();
+    StockItem stockItem =
+        StockItem.builder()
+            .id(stockItemId)
+            .user(currentUser)
+            .product(product)
+            .quantity(BigDecimal.TEN)
+            .build();
+    LocalDate futureDate = LocalDate.now().plusDays(10);
+    UpdateStockItemExpirationRequest request = new UpdateStockItemExpirationRequest(futureDate);
+    StockItemResponse expectedResponse = response(StockItemStatus.OK, futureDate, "Pomme");
+
+    when(stockItemRepository.findById(stockItemId)).thenReturn(Optional.of(stockItem));
+    when(stockItemRepository.save(stockItem)).thenReturn(stockItem);
+    when(stockItemMapper.toResponse(stockItem, 3)).thenReturn(expectedResponse);
+
+    StockItemResponse result = stockItemService.updateExpiration(currentUser, stockItemId, request);
+
+    assertThat(result).isEqualTo(expectedResponse);
+    assertThat(stockItem.getExpirationDate()).isEqualTo(futureDate);
+  }
+
+  @Test
+  void updateExpirationAcceptsTodayAsValidDate() {
+    UUID userId = UUID.randomUUID();
+    UUID stockItemId = UUID.randomUUID();
+    User currentUser = User.builder().id(userId).expirationAlertDays(3).build();
+    Product product = Product.builder().id(UUID.randomUUID()).name("Lait").build();
+    StockItem stockItem =
+        StockItem.builder()
+            .id(stockItemId)
+            .user(currentUser)
+            .product(product)
+            .quantity(BigDecimal.TEN)
+            .build();
+    LocalDate today = LocalDate.now();
+    UpdateStockItemExpirationRequest request = new UpdateStockItemExpirationRequest(today);
+
+    when(stockItemRepository.findById(stockItemId)).thenReturn(Optional.of(stockItem));
+    when(stockItemRepository.save(stockItem)).thenReturn(stockItem);
+    when(stockItemMapper.toResponse(stockItem, 3))
+        .thenReturn(response(StockItemStatus.EXPIRING, today, "Lait"));
+
+    stockItemService.updateExpiration(currentUser, stockItemId, request);
+
+    assertThat(stockItem.getExpirationDate()).isEqualTo(today);
+  }
+
+  @Test
+  void updateExpirationToNullRemovesDate() {
+    UUID userId = UUID.randomUUID();
+    UUID stockItemId = UUID.randomUUID();
+    User currentUser = User.builder().id(userId).expirationAlertDays(3).build();
+    Product product = Product.builder().id(UUID.randomUUID()).name("Riz").build();
+    StockItem stockItem =
+        StockItem.builder()
+            .id(stockItemId)
+            .user(currentUser)
+            .product(product)
+            .quantity(BigDecimal.TEN)
+            .expirationDate(LocalDate.now().plusDays(2))
+            .build();
+    UpdateStockItemExpirationRequest request = new UpdateStockItemExpirationRequest(null);
+
+    when(stockItemRepository.findById(stockItemId)).thenReturn(Optional.of(stockItem));
+    when(stockItemRepository.save(stockItem)).thenReturn(stockItem);
+    when(stockItemMapper.toResponse(stockItem, 3))
+        .thenReturn(response(StockItemStatus.OK, null, "Riz"));
+
+    stockItemService.updateExpiration(currentUser, stockItemId, request);
+
+    assertThat(stockItem.getExpirationDate()).isNull();
+  }
+
+  @Test
+  void updateExpirationThrowsNotFoundWhenStockItemDoesNotExist() {
+    UUID stockItemId = UUID.randomUUID();
+    User currentUser = User.builder().id(UUID.randomUUID()).build();
+    UpdateStockItemExpirationRequest request =
+        new UpdateStockItemExpirationRequest(LocalDate.now());
+
+    when(stockItemRepository.findById(stockItemId)).thenReturn(Optional.empty());
+
+    assertThatThrownBy(() -> stockItemService.updateExpiration(currentUser, stockItemId, request))
+        .isInstanceOf(StockItemNotFoundException.class);
+
+    verify(stockItemRepository, never()).save(any());
+  }
+
+  @Test
+  void updateExpirationThrowsForbiddenWhenStockItemOwnedByAnotherUser() {
+    UUID ownerId = UUID.randomUUID();
+    UUID requesterId = UUID.randomUUID();
+    UUID stockItemId = UUID.randomUUID();
+    User currentUser = User.builder().id(requesterId).build();
+    StockItem stockItem =
+        StockItem.builder()
+            .id(stockItemId)
+            .user(User.builder().id(ownerId).build())
+            .quantity(BigDecimal.TEN)
+            .build();
+    UpdateStockItemExpirationRequest request =
+        new UpdateStockItemExpirationRequest(LocalDate.now());
+
+    when(stockItemRepository.findById(stockItemId)).thenReturn(Optional.of(stockItem));
+
+    assertThatThrownBy(() -> stockItemService.updateExpiration(currentUser, stockItemId, request))
         .isInstanceOf(AccessDeniedException.class);
 
     verify(stockItemRepository, never()).save(any());

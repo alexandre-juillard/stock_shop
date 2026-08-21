@@ -9,6 +9,7 @@ import fr.stockshop.stock_api.shoppinglist.entity.ShoppingListItem;
 import fr.stockshop.stock_api.shoppinglist.repository.ShoppingListItemRepository;
 import fr.stockshop.stock_api.stock.dto.CreateStockItemRequest;
 import fr.stockshop.stock_api.stock.dto.StockItemResponse;
+import fr.stockshop.stock_api.stock.dto.UpdateStockItemExpirationRequest;
 import fr.stockshop.stock_api.stock.dto.UpdateStockItemQuantityRequest;
 import fr.stockshop.stock_api.stock.dto.UpdateStockItemThresholdRequest;
 import fr.stockshop.stock_api.stock.entity.StockItem;
@@ -115,6 +116,21 @@ public class StockItemService {
     StockItem saved = stockItemRepository.save(stockItem);
 
     applyShoppingListRule(currentUser, saved);
+
+    return stockItemMapper.toResponse(saved, currentUser.getExpirationAlertDays());
+  }
+
+  @Transactional
+  public StockItemResponse updateExpiration(
+      User currentUser, UUID stockItemId, UpdateStockItemExpirationRequest request) {
+    StockItem stockItem =
+        stockItemRepository
+            .findById(stockItemId)
+            .orElseThrow(() -> new StockItemNotFoundException(stockItemId));
+    assertOwnership(stockItem, currentUser);
+
+    stockItem.setExpirationDate(request.expirationDate());
+    StockItem saved = stockItemRepository.save(stockItem);
 
     return stockItemMapper.toResponse(saved, currentUser.getExpirationAlertDays());
   }

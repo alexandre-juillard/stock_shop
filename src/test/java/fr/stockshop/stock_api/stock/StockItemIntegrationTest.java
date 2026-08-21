@@ -827,6 +827,177 @@ class StockItemIntegrationTest {
         .andExpect(status().isNotFound());
   }
 
+  @Test
+  void updateExpirationReturns200WithFutureDate() throws Exception {
+    String email = "stock-exp-ok-" + UUID.randomUUID() + "@test.fr";
+    String token = registerActivateAndLogin(email);
+    User user = userRepository.findByEmail(email).orElseThrow();
+    UUID catId = saveCategory(user, "Fruits", "#191919");
+    UUID typeId = weightTypeId();
+    UUID unitId = kgUnitId(typeId);
+    UUID productId = insertProduct(user.getId(), catId, "Ananas", typeId, unitId, true);
+    UUID stockItemId = insertStockItem(user.getId(), productId, BigDecimal.TEN, null, null);
+    LocalDate futureDate = LocalDate.now().plusDays(30);
+
+    mockMvc
+        .perform(
+            patch("/api/stock-items/" + stockItemId + "/expiration")
+                .header("Authorization", "Bearer " + token)
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(
+                    objectMapper.writeValueAsString(
+                        Map.of("expirationDate", futureDate.toString()))))
+        .andExpect(status().isOk())
+        .andExpect(jsonPath("$.expirationDate").value(futureDate.toString()));
+
+    LocalDate storedDate =
+        jdbcTemplate.queryForObject(
+            "select expiration_date from stock_items where id = ?", LocalDate.class, stockItemId);
+    assertThat(storedDate).isEqualTo(futureDate);
+  }
+
+  @Test
+  void updateExpirationWithPastDateReturnsBadRequest() throws Exception {
+    String email = "stock-exp-past-" + UUID.randomUUID() + "@test.fr";
+    String token = registerActivateAndLogin(email);
+    User user = userRepository.findByEmail(email).orElseThrow();
+    UUID catId = saveCategory(user, "Legumes", "#202020");
+    UUID typeId = weightTypeId();
+    UUID unitId = kgUnitId(typeId);
+    UUID productId = insertProduct(user.getId(), catId, "Tomate", typeId, unitId, true);
+    UUID stockItemId = insertStockItem(user.getId(), productId, BigDecimal.TEN, null, null);
+
+    mockMvc
+        .perform(
+            patch("/api/stock-items/" + stockItemId + "/expiration")
+                .header("Authorization", "Bearer " + token)
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(
+                    objectMapper.writeValueAsString(
+                        Map.of("expirationDate", LocalDate.now().minusDays(1).toString()))))
+        .andExpect(status().isBadRequest());
+  }
+
+  @Test
+  void updateExpirationWithTodayDateReturns200() throws Exception {
+    String email = "stock-exp-today-" + UUID.randomUUID() + "@test.fr";
+    String token = registerActivateAndLogin(email);
+    User user = userRepository.findByEmail(email).orElseThrow();
+    UUID catId = saveCategory(user, "Boulangerie", "#212121");
+    UUID typeId = weightTypeId();
+    UUID unitId = kgUnitId(typeId);
+    UUID productId = insertProduct(user.getId(), catId, "Baguette", typeId, unitId, true);
+    UUID stockItemId = insertStockItem(user.getId(), productId, BigDecimal.TEN, null, null);
+
+    mockMvc
+        .perform(
+            patch("/api/stock-items/" + stockItemId + "/expiration")
+                .header("Authorization", "Bearer " + token)
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(
+                    objectMapper.writeValueAsString(
+                        Map.of("expirationDate", LocalDate.now().toString()))))
+        .andExpect(status().isOk())
+        .andExpect(jsonPath("$.status").value("expiring"));
+  }
+
+  @Test
+  void updateExpirationToNullRemovesDate() throws Exception {
+    String email = "stock-exp-null-" + UUID.randomUUID() + "@test.fr";
+    String token = registerActivateAndLogin(email);
+    User user = userRepository.findByEmail(email).orElseThrow();
+    UUID catId = saveCategory(user, "Epicerie", "#222222");
+    UUID typeId = weightTypeId();
+    UUID unitId = kgUnitId(typeId);
+    UUID productId = insertProduct(user.getId(), catId, "Miel", typeId, unitId, true);
+    UUID stockItemId =
+        insertStockItem(user.getId(), productId, BigDecimal.TEN, null, LocalDate.now().plusDays(5));
+
+    mockMvc
+        .perform(
+            patch("/api/stock-items/" + stockItemId + "/expiration")
+                .header("Authorization", "Bearer " + token)
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(
+                    objectMapper.writeValueAsString(
+                        Collections.singletonMap("expirationDate", null))))
+        .andExpect(status().isOk())
+        .andExpect(jsonPath("$.expirationDate").doesNotExist());
+
+    LocalDate storedDate =
+        jdbcTemplate.queryForObject(
+            "select expiration_date from stock_items where id = ?", LocalDate.class, stockItemId);
+    assertThat(storedDate).isNull();
+  }
+
+  @Test
+  void updateExpirationWithinAlertDelayShowsAsExpiringInList() throws Exception {
+    String email = "stock-exp-alert-" + UUID.randomUUID() + "@test.fr";
+    String token = registerActivateAndLogin(email);
+    User user = userRepository.findByEmail(email).orElseThrow();
+    jdbcTemplate.update("update users set expiration_alert_days = ? where id = ?", 5, user.getId());
+    UUID catId = saveCategory(user, "Produits laitiers", "#232323");
+    UUID typeId = weightTypeId();
+    UUID unitId = kgUnitId(typeId);
+    UUID productId = insertProduct(user.getId(), catId, "Yaourt", typeId, unitId, true);
+    UUID stockItemId = insertStockItem(user.getId(), productId, BigDecimal.TEN, null, null);
+
+    mockMvc
+        .perform(
+            patch("/api/stock-items/" + stockItemId + "/expiration")
+                .header("Authorization", "Bearer " + token)
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(
+                    objectMapper.writeValueAsString(
+                        Map.of("expirationDate", LocalDate.now().plusDays(3).toString()))))
+        .andExpect(status().isOk());
+
+    mockMvc
+        .perform(get("/api/stock-items").header("Authorization", "Bearer " + token))
+        .andExpect(status().isOk())
+        .andExpect(jsonPath("$[0].status").value("expiring"));
+  }
+
+  @Test
+  void updateExpirationOwnedByAnotherUserReturnsForbidden() throws Exception {
+    String ownerEmail = "stock-exp-owner-" + UUID.randomUUID() + "@test.fr";
+    registerActivateAndLogin(ownerEmail);
+    User owner = userRepository.findByEmail(ownerEmail).orElseThrow();
+    UUID catId = saveCategory(owner, "Prive5", "#242424");
+    UUID typeId = weightTypeId();
+    UUID unitId = kgUnitId(typeId);
+    UUID productId = insertProduct(owner.getId(), catId, "Confiture", typeId, unitId, true);
+    UUID stockItemId = insertStockItem(owner.getId(), productId, BigDecimal.TEN, null, null);
+
+    String outsiderToken =
+        registerActivateAndLogin("stock-exp-outsider-" + UUID.randomUUID() + "@test.fr");
+
+    mockMvc
+        .perform(
+            patch("/api/stock-items/" + stockItemId + "/expiration")
+                .header("Authorization", "Bearer " + outsiderToken)
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(
+                    objectMapper.writeValueAsString(
+                        Map.of("expirationDate", LocalDate.now().plusDays(1).toString()))))
+        .andExpect(status().isForbidden());
+  }
+
+  @Test
+  void updateExpirationWithUnknownStockItemReturnsNotFound() throws Exception {
+    String token = registerActivateAndLogin("stock-exp-404-" + UUID.randomUUID() + "@test.fr");
+
+    mockMvc
+        .perform(
+            patch("/api/stock-items/" + UUID.randomUUID() + "/expiration")
+                .header("Authorization", "Bearer " + token)
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(
+                    objectMapper.writeValueAsString(
+                        Map.of("expirationDate", LocalDate.now().plusDays(1).toString()))))
+        .andExpect(status().isNotFound());
+  }
+
   private UUID weightTypeId() {
     return jdbcTemplate.queryForObject(
         "select id from quantity_types where code = ?", UUID.class, "weight");
