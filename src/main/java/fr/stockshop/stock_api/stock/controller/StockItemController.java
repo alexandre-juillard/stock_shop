@@ -2,6 +2,7 @@ package fr.stockshop.stock_api.stock.controller;
 
 import fr.stockshop.stock_api.stock.dto.CreateStockItemRequest;
 import fr.stockshop.stock_api.stock.dto.StockItemResponse;
+import fr.stockshop.stock_api.stock.dto.UpdateStockItemExpirationRequest;
 import fr.stockshop.stock_api.stock.dto.UpdateStockItemQuantityRequest;
 import fr.stockshop.stock_api.stock.dto.UpdateStockItemThresholdRequest;
 import fr.stockshop.stock_api.stock.service.StockItemService;
@@ -76,5 +77,14 @@ public class StockItemController {
       @PathVariable UUID id,
       @Valid @RequestBody UpdateStockItemThresholdRequest request) {
     return ResponseEntity.ok(stockItemService.updateThreshold(currentUser, id, request));
+  }
+
+  @PatchMapping("/{id}/expiration")
+  @Operation(summary = "Définir ou supprimer la date d'expiration d'un ingrédient en stock")
+  public ResponseEntity<StockItemResponse> updateExpiration(
+      @AuthenticationPrincipal User currentUser,
+      @PathVariable UUID id,
+      @Valid @RequestBody UpdateStockItemExpirationRequest request) {
+    return ResponseEntity.ok(stockItemService.updateExpiration(currentUser, id, request));
   }
 }
