@@ -6,6 +6,9 @@ target/
 .env
 AGENT.md
 
+# Credentials du compte de service Firebase.
+firebase-service-account.json
+
 ### STS ###
 .apt_generated
 .classpath

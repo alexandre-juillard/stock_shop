@@ -113,6 +113,12 @@
 			<version>4.10.3</version>
 			<scope>provided</scope>
 		</dependency>
+		<dependency>
+			<!-- SDK Firebase Admin (FCM) : envoi des notifications push d'expiration -->
+			<groupId>com.google.firebase</groupId>
+			<artifactId>firebase-admin</artifactId>
+			<version>9.9.0</version>
+		</dependency>
 
 		<dependency>
 			<groupId>org.springframework.boot</groupId>
