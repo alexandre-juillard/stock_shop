@@ -1,6 +1,7 @@
 package fr.stockshop.stock_api.stock;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.delete;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.patch;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
@@ -995,6 +996,70 @@ class StockItemIntegrationTest {
                 .content(
                     objectMapper.writeValueAsString(
                         Map.of("expirationDate", LocalDate.now().plusDays(1).toString()))))
+        .andExpect(status().isNotFound());
+  }
+
+  @Test
+  void deleteStockItemReturnsNoContentAndKeepsProductInCatalog() throws Exception {
+    String email = "stock-delete-ok-" + UUID.randomUUID() + "@test.fr";
+    String token = registerActivateAndLogin(email);
+    User user = userRepository.findByEmail(email).orElseThrow();
+    UUID catId = saveCategory(user, "Fruits", "#252525");
+    UUID typeId = weightTypeId();
+    UUID unitId = kgUnitId(typeId);
+    UUID productId = insertProduct(user.getId(), catId, "Mangue", typeId, unitId, true);
+    UUID stockItemId = insertStockItem(user.getId(), productId, BigDecimal.TEN, null, null);
+
+    mockMvc
+        .perform(
+            delete("/api/stock-items/" + stockItemId).header("Authorization", "Bearer " + token))
+        .andExpect(status().isNoContent());
+
+    Integer stockItemCount =
+        jdbcTemplate.queryForObject(
+            "select count(*) from stock_items where id = ?", Integer.class, stockItemId);
+    assertThat(stockItemCount).isZero();
+
+    Integer productCount =
+        jdbcTemplate.queryForObject(
+            "select count(*) from products where id = ?", Integer.class, productId);
+    assertThat(productCount).isEqualTo(1);
+  }
+
+  @Test
+  void deleteStockItemOwnedByAnotherUserReturnsForbidden() throws Exception {
+    String ownerEmail = "stock-delete-owner-" + UUID.randomUUID() + "@test.fr";
+    registerActivateAndLogin(ownerEmail);
+    User owner = userRepository.findByEmail(ownerEmail).orElseThrow();
+    UUID catId = saveCategory(owner, "Prive6", "#262626");
+    UUID typeId = weightTypeId();
+    UUID unitId = kgUnitId(typeId);
+    UUID productId = insertProduct(owner.getId(), catId, "Papaye", typeId, unitId, true);
+    UUID stockItemId = insertStockItem(owner.getId(), productId, BigDecimal.TEN, null, null);
+
+    String outsiderToken =
+        registerActivateAndLogin("stock-delete-outsider-" + UUID.randomUUID() + "@test.fr");
+
+    mockMvc
+        .perform(
+            delete("/api/stock-items/" + stockItemId)
+                .header("Authorization", "Bearer " + outsiderToken))
+        .andExpect(status().isForbidden());
+
+    Integer stockItemCount =
+        jdbcTemplate.queryForObject(
+            "select count(*) from stock_items where id = ?", Integer.class, stockItemId);
+    assertThat(stockItemCount).isEqualTo(1);
+  }
+
+  @Test
+  void deleteStockItemWithUnknownStockItemReturnsNotFound() throws Exception {
+    String token = registerActivateAndLogin("stock-delete-404-" + UUID.randomUUID() + "@test.fr");
+
+    mockMvc
+        .perform(
+            delete("/api/stock-items/" + UUID.randomUUID())
+                .header("Authorization", "Bearer " + token))
         .andExpect(status().isNotFound());
   }
 

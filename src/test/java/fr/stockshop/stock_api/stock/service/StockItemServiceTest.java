@@ -779,10 +779,58 @@ class StockItemServiceTest {
         new UpdateStockItemExpirationRequest(LocalDate.now());
 
     when(stockItemRepository.findById(stockItemId)).thenReturn(Optional.of(stockItem));
-
     assertThatThrownBy(() -> stockItemService.updateExpiration(currentUser, stockItemId, request))
         .isInstanceOf(AccessDeniedException.class);
 
     verify(stockItemRepository, never()).save(any());
+  }
+
+  @Test
+  void deleteStockItemRemovesInstanceWhenOwnedByCurrentUser() {
+    UUID userId = UUID.randomUUID();
+    UUID stockItemId = UUID.randomUUID();
+    User currentUser = User.builder().id(userId).build();
+    StockItem stockItem =
+        StockItem.builder().id(stockItemId).user(currentUser).quantity(BigDecimal.TEN).build();
+
+    when(stockItemRepository.findById(stockItemId)).thenReturn(Optional.of(stockItem));
+
+    stockItemService.deleteStockItem(currentUser, stockItemId);
+
+    verify(stockItemRepository).delete(stockItem);
+  }
+
+  @Test
+  void deleteStockItemThrowsNotFoundWhenStockItemDoesNotExist() {
+    UUID stockItemId = UUID.randomUUID();
+    User currentUser = User.builder().id(UUID.randomUUID()).build();
+
+    when(stockItemRepository.findById(stockItemId)).thenReturn(Optional.empty());
+
+    assertThatThrownBy(() -> stockItemService.deleteStockItem(currentUser, stockItemId))
+        .isInstanceOf(StockItemNotFoundException.class);
+
+    verify(stockItemRepository, never()).delete(any(StockItem.class));
+  }
+
+  @Test
+  void deleteStockItemThrowsForbiddenWhenStockItemOwnedByAnotherUser() {
+    UUID ownerId = UUID.randomUUID();
+    UUID requesterId = UUID.randomUUID();
+    UUID stockItemId = UUID.randomUUID();
+    User currentUser = User.builder().id(requesterId).build();
+    StockItem stockItem =
+        StockItem.builder()
+            .id(stockItemId)
+            .user(User.builder().id(ownerId).build())
+            .quantity(BigDecimal.TEN)
+            .build();
+
+    when(stockItemRepository.findById(stockItemId)).thenReturn(Optional.of(stockItem));
+
+    assertThatThrownBy(() -> stockItemService.deleteStockItem(currentUser, stockItemId))
+        .isInstanceOf(AccessDeniedException.class);
+
+    verify(stockItemRepository, never()).delete(any(StockItem.class));
   }
 }
