@@ -16,6 +16,7 @@ import fr.stockshop.stock_api.user.entity.User;
 import fr.stockshop.stock_api.user.repository.UserRepository;
 import java.math.BigDecimal;
 import java.time.LocalDate;
+import java.util.Collections;
 import java.util.Map;
 import java.util.UUID;
 import org.junit.jupiter.api.Test;
@@ -595,6 +596,234 @@ class StockItemIntegrationTest {
                 .header("Authorization", "Bearer " + token)
                 .contentType(MediaType.APPLICATION_JSON)
                 .content(objectMapper.writeValueAsString(Map.of("quantity", 1))))
+        .andExpect(status().isNotFound());
+  }
+
+  @Test
+  void updateThresholdReturns200WithUpdatedThreshold() throws Exception {
+    String email = "stock-threshold-ok-" + UUID.randomUUID() + "@test.fr";
+    String token = registerActivateAndLogin(email);
+    User user = userRepository.findByEmail(email).orElseThrow();
+    UUID catId = saveCategory(user, "Fruits", "#121212");
+    UUID typeId = weightTypeId();
+    UUID unitId = kgUnitId(typeId);
+    UUID productId = insertProduct(user.getId(), catId, "Kiwi", typeId, unitId, true);
+    UUID stockItemId = insertStockItem(user.getId(), productId, BigDecimal.TEN, null, null);
+
+    mockMvc
+        .perform(
+            patch("/api/stock-items/" + stockItemId + "/threshold")
+                .header("Authorization", "Bearer " + token)
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(objectMapper.writeValueAsString(Map.of("lowThreshold", 3))))
+        .andExpect(status().isOk())
+        .andExpect(jsonPath("$.id").value(stockItemId.toString()))
+        .andExpect(jsonPath("$.lowThreshold").value(3));
+
+    java.math.BigDecimal storedThreshold =
+        jdbcTemplate.queryForObject(
+            "select low_threshold from stock_items where id = ?",
+            java.math.BigDecimal.class,
+            stockItemId);
+    assertThat(storedThreshold).isEqualByComparingTo("3");
+  }
+
+  @Test
+  void updateThresholdWithNegativeValueReturnsBadRequest() throws Exception {
+    String email = "stock-threshold-neg-" + UUID.randomUUID() + "@test.fr";
+    String token = registerActivateAndLogin(email);
+    User user = userRepository.findByEmail(email).orElseThrow();
+    UUID catId = saveCategory(user, "Legumes", "#131313");
+    UUID typeId = weightTypeId();
+    UUID unitId = kgUnitId(typeId);
+    UUID productId = insertProduct(user.getId(), catId, "Navet", typeId, unitId, true);
+    UUID stockItemId = insertStockItem(user.getId(), productId, BigDecimal.TEN, null, null);
+
+    mockMvc
+        .perform(
+            patch("/api/stock-items/" + stockItemId + "/threshold")
+                .header("Authorization", "Bearer " + token)
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(objectMapper.writeValueAsString(Map.of("lowThreshold", -1))))
+        .andExpect(status().isBadRequest());
+  }
+
+  @Test
+  void updateThresholdToNullRemovesThresholdWithoutRemovingFromShoppingList() throws Exception {
+    String email = "stock-threshold-null-" + UUID.randomUUID() + "@test.fr";
+    String token = registerActivateAndLogin(email);
+    User user = userRepository.findByEmail(email).orElseThrow();
+    UUID catId = saveCategory(user, "Epicerie", "#141414");
+    UUID typeId = weightTypeId();
+    UUID unitId = kgUnitId(typeId);
+    UUID productId = insertProduct(user.getId(), catId, "Sucre", typeId, unitId, true);
+    UUID stockItemId =
+        insertStockItem(user.getId(), productId, new BigDecimal("1"), new BigDecimal("2"), null);
+    jdbcTemplate.update(
+        "insert into shopping_list_items (id, user_id, product_id, is_checked, added_automatically, added_at)"
+            + " values (?, ?, ?, ?, ?, now())",
+        UUID.randomUUID(),
+        user.getId(),
+        productId,
+        false,
+        true);
+
+    mockMvc
+        .perform(
+            patch("/api/stock-items/" + stockItemId + "/threshold")
+                .header("Authorization", "Bearer " + token)
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(
+                    objectMapper.writeValueAsString(
+                        Collections.singletonMap("lowThreshold", null))))
+        .andExpect(status().isOk())
+        .andExpect(jsonPath("$.lowThreshold").doesNotExist());
+
+    java.math.BigDecimal storedThreshold =
+        jdbcTemplate.queryForObject(
+            "select low_threshold from stock_items where id = ?",
+            java.math.BigDecimal.class,
+            stockItemId);
+    assertThat(storedThreshold).isNull();
+
+    Integer shoppingCount =
+        jdbcTemplate.queryForObject(
+            "select count(*) from shopping_list_items where user_id = ? and product_id = ?",
+            Integer.class,
+            user.getId(),
+            productId);
+    assertThat(shoppingCount).isEqualTo(1);
+  }
+
+  @Test
+  void updateThresholdAddsToShoppingListWhenCurrentQuantityBelowOrEqualNewThreshold()
+      throws Exception {
+    String email = "stock-threshold-shopping-" + UUID.randomUUID() + "@test.fr";
+    String token = registerActivateAndLogin(email);
+    User user = userRepository.findByEmail(email).orElseThrow();
+    UUID catId = saveCategory(user, "Boissons", "#151515");
+    UUID typeId = weightTypeId();
+    UUID unitId = kgUnitId(typeId);
+    UUID productId = insertProduct(user.getId(), catId, "Jus", typeId, unitId, true);
+    UUID stockItemId = insertStockItem(user.getId(), productId, new BigDecimal("5"), null, null);
+
+    mockMvc
+        .perform(
+            patch("/api/stock-items/" + stockItemId + "/threshold")
+                .header("Authorization", "Bearer " + token)
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(objectMapper.writeValueAsString(Map.of("lowThreshold", 10))))
+        .andExpect(status().isOk())
+        .andExpect(jsonPath("$.status").value("low"));
+
+    Integer shoppingCount =
+        jdbcTemplate.queryForObject(
+            "select count(*) from shopping_list_items where user_id = ? and product_id = ? and added_automatically = true",
+            Integer.class,
+            user.getId(),
+            productId);
+    assertThat(shoppingCount).isEqualTo(1);
+  }
+
+  @Test
+  void updateThresholdDoesNotAddToShoppingListWhenQuantityAboveNewThreshold() throws Exception {
+    String email = "stock-threshold-no-shopping-" + UUID.randomUUID() + "@test.fr";
+    String token = registerActivateAndLogin(email);
+    User user = userRepository.findByEmail(email).orElseThrow();
+    UUID catId = saveCategory(user, "Cereales", "#161616");
+    UUID typeId = weightTypeId();
+    UUID unitId = kgUnitId(typeId);
+    UUID productId = insertProduct(user.getId(), catId, "Ble", typeId, unitId, true);
+    UUID stockItemId = insertStockItem(user.getId(), productId, BigDecimal.TEN, null, null);
+
+    mockMvc
+        .perform(
+            patch("/api/stock-items/" + stockItemId + "/threshold")
+                .header("Authorization", "Bearer " + token)
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(objectMapper.writeValueAsString(Map.of("lowThreshold", 2))))
+        .andExpect(status().isOk())
+        .andExpect(jsonPath("$.status").value("ok"));
+
+    Integer shoppingCount =
+        jdbcTemplate.queryForObject(
+            "select count(*) from shopping_list_items where user_id = ? and product_id = ?",
+            Integer.class,
+            user.getId(),
+            productId);
+    assertThat(shoppingCount).isZero();
+  }
+
+  @Test
+  void updateThresholdDoesNotDuplicateShoppingListEntry() throws Exception {
+    String email = "stock-threshold-no-dup-" + UUID.randomUUID() + "@test.fr";
+    String token = registerActivateAndLogin(email);
+    User user = userRepository.findByEmail(email).orElseThrow();
+    UUID catId = saveCategory(user, "Produits laitiers", "#171717");
+    UUID typeId = weightTypeId();
+    UUID unitId = kgUnitId(typeId);
+    UUID productId = insertProduct(user.getId(), catId, "Yaourt", typeId, unitId, true);
+    UUID stockItemId = insertStockItem(user.getId(), productId, new BigDecimal("1"), null, null);
+    jdbcTemplate.update(
+        "insert into shopping_list_items (id, user_id, product_id, is_checked, added_automatically, added_at)"
+            + " values (?, ?, ?, ?, ?, now())",
+        UUID.randomUUID(),
+        user.getId(),
+        productId,
+        false,
+        true);
+
+    mockMvc
+        .perform(
+            patch("/api/stock-items/" + stockItemId + "/threshold")
+                .header("Authorization", "Bearer " + token)
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(objectMapper.writeValueAsString(Map.of("lowThreshold", 5))))
+        .andExpect(status().isOk());
+
+    Integer shoppingCount =
+        jdbcTemplate.queryForObject(
+            "select count(*) from shopping_list_items where user_id = ? and product_id = ?",
+            Integer.class,
+            user.getId(),
+            productId);
+    assertThat(shoppingCount).isEqualTo(1);
+  }
+
+  @Test
+  void updateThresholdOwnedByAnotherUserReturnsForbidden() throws Exception {
+    String ownerEmail = "stock-threshold-owner-" + UUID.randomUUID() + "@test.fr";
+    registerActivateAndLogin(ownerEmail);
+    User owner = userRepository.findByEmail(ownerEmail).orElseThrow();
+    UUID catId = saveCategory(owner, "Prive4", "#181818");
+    UUID typeId = weightTypeId();
+    UUID unitId = kgUnitId(typeId);
+    UUID productId = insertProduct(owner.getId(), catId, "Fromage", typeId, unitId, true);
+    UUID stockItemId = insertStockItem(owner.getId(), productId, BigDecimal.TEN, null, null);
+
+    String outsiderToken =
+        registerActivateAndLogin("stock-threshold-outsider-" + UUID.randomUUID() + "@test.fr");
+
+    mockMvc
+        .perform(
+            patch("/api/stock-items/" + stockItemId + "/threshold")
+                .header("Authorization", "Bearer " + outsiderToken)
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(objectMapper.writeValueAsString(Map.of("lowThreshold", 1))))
+        .andExpect(status().isForbidden());
+  }
+
+  @Test
+  void updateThresholdWithUnknownStockItemReturnsNotFound() throws Exception {
+    String token =
+        registerActivateAndLogin("stock-threshold-404-" + UUID.randomUUID() + "@test.fr");
+
+    mockMvc
+        .perform(
+            patch("/api/stock-items/" + UUID.randomUUID() + "/threshold")
+                .header("Authorization", "Bearer " + token)
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(objectMapper.writeValueAsString(Map.of("lowThreshold", 1))))
         .andExpect(status().isNotFound());
   }
 
