@@ -135,6 +135,17 @@ public class StockItemService {
     return stockItemMapper.toResponse(saved, currentUser.getExpirationAlertDays());
   }
 
+  @Transactional
+  public void deleteStockItem(User currentUser, UUID stockItemId) {
+    StockItem stockItem =
+        stockItemRepository
+            .findById(stockItemId)
+            .orElseThrow(() -> new StockItemNotFoundException(stockItemId));
+    assertOwnership(stockItem, currentUser);
+
+    stockItemRepository.delete(stockItem);
+  }
+
   /**
    * ajoute automatiquement l'ingrédient à la liste de courses si sa quantité est désormais
    * inférieure ou égale au seuil bas défini, sauf s'il y figure déjà. Ne retire jamais un
