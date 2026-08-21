@@ -11,6 +11,7 @@ import static org.mockito.Mockito.when;
 
 import fr.stockshop.stock_api.category.dto.CategoryResponse;
 import fr.stockshop.stock_api.exception.ProductNotFoundException;
+import fr.stockshop.stock_api.exception.ShoppingListItemAlreadyExistsException;
 import fr.stockshop.stock_api.exception.StockItemAlreadyExistsException;
 import fr.stockshop.stock_api.exception.StockItemNotFoundException;
 import fr.stockshop.stock_api.product.entity.Product;
@@ -36,6 +37,7 @@ import java.util.Optional;
 import java.util.UUID;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
+import org.mockito.ArgumentCaptor;
 import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
@@ -832,5 +834,73 @@ class StockItemServiceTest {
         .isInstanceOf(AccessDeniedException.class);
 
     verify(stockItemRepository, never()).delete(any(StockItem.class));
+  }
+
+  @Test
+  void addToShoppingListManuallyCreatesEntryWithAddedAutomaticallyFalse() {
+    UUID userId = UUID.randomUUID();
+    UUID stockItemId = UUID.randomUUID();
+    User currentUser = User.builder().id(userId).build();
+    Product product = Product.builder().id(UUID.randomUUID()).name("Pomme").build();
+    StockItem stockItem =
+        StockItem.builder().id(stockItemId).user(currentUser).product(product).build();
+
+    when(stockItemRepository.findById(stockItemId)).thenReturn(Optional.of(stockItem));
+    when(shoppingListItemRepository.existsByUserAndProduct(currentUser, product)).thenReturn(false);
+
+    stockItemService.addToShoppingListManually(currentUser, stockItemId);
+
+    ArgumentCaptor<ShoppingListItem> captor = ArgumentCaptor.forClass(ShoppingListItem.class);
+    verify(shoppingListItemRepository).save(captor.capture());
+    assertThat(captor.getValue().isAddedAutomatically()).isFalse();
+    assertThat(captor.getValue().getProduct()).isEqualTo(product);
+  }
+
+  @Test
+  void addToShoppingListManuallyThrowsConflictWhenAlreadyPresent() {
+    UUID userId = UUID.randomUUID();
+    UUID stockItemId = UUID.randomUUID();
+    User currentUser = User.builder().id(userId).build();
+    Product product = Product.builder().id(UUID.randomUUID()).name("Riz").build();
+    StockItem stockItem =
+        StockItem.builder().id(stockItemId).user(currentUser).product(product).build();
+
+    when(stockItemRepository.findById(stockItemId)).thenReturn(Optional.of(stockItem));
+    when(shoppingListItemRepository.existsByUserAndProduct(currentUser, product)).thenReturn(true);
+
+    assertThatThrownBy(() -> stockItemService.addToShoppingListManually(currentUser, stockItemId))
+        .isInstanceOf(ShoppingListItemAlreadyExistsException.class);
+
+    verify(shoppingListItemRepository, never()).save(any());
+  }
+
+  @Test
+  void addToShoppingListManuallyThrowsNotFoundWhenStockItemDoesNotExist() {
+    UUID stockItemId = UUID.randomUUID();
+    User currentUser = User.builder().id(UUID.randomUUID()).build();
+
+    when(stockItemRepository.findById(stockItemId)).thenReturn(Optional.empty());
+
+    assertThatThrownBy(() -> stockItemService.addToShoppingListManually(currentUser, stockItemId))
+        .isInstanceOf(StockItemNotFoundException.class);
+
+    verifyNoInteractions(shoppingListItemRepository);
+  }
+
+  @Test
+  void addToShoppingListManuallyThrowsForbiddenWhenStockItemOwnedByAnotherUser() {
+    UUID ownerId = UUID.randomUUID();
+    UUID requesterId = UUID.randomUUID();
+    UUID stockItemId = UUID.randomUUID();
+    User currentUser = User.builder().id(requesterId).build();
+    StockItem stockItem =
+        StockItem.builder().id(stockItemId).user(User.builder().id(ownerId).build()).build();
+
+    when(stockItemRepository.findById(stockItemId)).thenReturn(Optional.of(stockItem));
+
+    assertThatThrownBy(() -> stockItemService.addToShoppingListManually(currentUser, stockItemId))
+        .isInstanceOf(AccessDeniedException.class);
+
+    verifyNoInteractions(shoppingListItemRepository);
   }
 }

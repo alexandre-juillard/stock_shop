@@ -1,6 +1,7 @@
 package fr.stockshop.stock_api.stock.service;
 
 import fr.stockshop.stock_api.exception.ProductNotFoundException;
+import fr.stockshop.stock_api.exception.ShoppingListItemAlreadyExistsException;
 import fr.stockshop.stock_api.exception.StockItemAlreadyExistsException;
 import fr.stockshop.stock_api.exception.StockItemNotFoundException;
 import fr.stockshop.stock_api.product.entity.Product;
@@ -146,6 +147,21 @@ public class StockItemService {
     stockItemRepository.delete(stockItem);
   }
 
+  @Transactional
+  public void addToShoppingListManually(User currentUser, UUID stockItemId) {
+    StockItem stockItem =
+        stockItemRepository
+            .findById(stockItemId)
+            .orElseThrow(() -> new StockItemNotFoundException(stockItemId));
+    assertOwnership(stockItem, currentUser);
+
+    if (shoppingListItemRepository.existsByUserAndProduct(currentUser, stockItem.getProduct())) {
+      throw new ShoppingListItemAlreadyExistsException(stockItem.getProduct().getName());
+    }
+
+    addToShoppingList(currentUser, stockItem.getProduct(), false);
+  }
+
   /**
    * ajoute automatiquement l'ingrédient à la liste de courses si sa quantité est désormais
    * inférieure ou égale au seuil bas défini, sauf s'il y figure déjà. Ne retire jamais un
@@ -159,17 +175,17 @@ public class StockItemService {
     if (isBelowThreshold
         && !shoppingListItemRepository.existsByUserAndProduct(
             currentUser, stockItem.getProduct())) {
-      addToShoppingList(currentUser, stockItem.getProduct());
+      addToShoppingList(currentUser, stockItem.getProduct(), true);
     }
   }
 
-  private void addToShoppingList(User currentUser, Product product) {
+  private void addToShoppingList(User currentUser, Product product, boolean addedAutomatically) {
     ShoppingListItem shoppingListItem =
         ShoppingListItem.builder()
             .user(currentUser)
             .product(product)
             .checked(false)
-            .addedAutomatically(true)
+            .addedAutomatically(addedAutomatically)
             .build();
     shoppingListItemRepository.save(shoppingListItem);
   }

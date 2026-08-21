@@ -96,4 +96,12 @@ public class StockItemController {
     stockItemService.deleteStockItem(currentUser, id);
     return ResponseEntity.noContent().build();
   }
+
+  @PostMapping("/{id}/add-to-shopping-list")
+  @Operation(summary = "Ajouter manuellement un ingrédient du stock à la liste de courses")
+  public ResponseEntity<Void> addToShoppingList(
+      @AuthenticationPrincipal User currentUser, @PathVariable UUID id) {
+    stockItemService.addToShoppingListManually(currentUser, id);
+    return ResponseEntity.noContent().build();
+  }
 }

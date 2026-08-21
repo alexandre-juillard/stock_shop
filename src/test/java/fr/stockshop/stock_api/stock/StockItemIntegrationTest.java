@@ -1063,6 +1063,100 @@ class StockItemIntegrationTest {
         .andExpect(status().isNotFound());
   }
 
+  @Test
+  void addToShoppingListReturnsNoContentAndCreatesManualEntry() throws Exception {
+    String email = "stock-add-shopping-ok-" + UUID.randomUUID() + "@test.fr";
+    String token = registerActivateAndLogin(email);
+    User user = userRepository.findByEmail(email).orElseThrow();
+    UUID catId = saveCategory(user, "Fruits", "#272727");
+    UUID typeId = weightTypeId();
+    UUID unitId = kgUnitId(typeId);
+    UUID productId = insertProduct(user.getId(), catId, "Fraise", typeId, unitId, true);
+    UUID stockItemId = insertStockItem(user.getId(), productId, BigDecimal.TEN, null, null);
+
+    mockMvc
+        .perform(
+            post("/api/stock-items/" + stockItemId + "/add-to-shopping-list")
+                .header("Authorization", "Bearer " + token))
+        .andExpect(status().isNoContent());
+
+    Boolean addedAutomatically =
+        jdbcTemplate.queryForObject(
+            "select added_automatically from shopping_list_items where user_id = ? and product_id = ?",
+            Boolean.class,
+            user.getId(),
+            productId);
+    assertThat(addedAutomatically).isFalse();
+  }
+
+  @Test
+  void addToShoppingListWithAlreadyPresentProductReturnsConflictWithoutDuplicate()
+      throws Exception {
+    String email = "stock-add-shopping-dup-" + UUID.randomUUID() + "@test.fr";
+    String token = registerActivateAndLogin(email);
+    User user = userRepository.findByEmail(email).orElseThrow();
+    UUID catId = saveCategory(user, "Legumes", "#282828");
+    UUID typeId = weightTypeId();
+    UUID unitId = kgUnitId(typeId);
+    UUID productId = insertProduct(user.getId(), catId, "Courgette", typeId, unitId, true);
+    UUID stockItemId = insertStockItem(user.getId(), productId, BigDecimal.TEN, null, null);
+    jdbcTemplate.update(
+        "insert into shopping_list_items (id, user_id, product_id, is_checked, added_automatically, added_at)"
+            + " values (?, ?, ?, ?, ?, now())",
+        UUID.randomUUID(),
+        user.getId(),
+        productId,
+        false,
+        true);
+
+    mockMvc
+        .perform(
+            post("/api/stock-items/" + stockItemId + "/add-to-shopping-list")
+                .header("Authorization", "Bearer " + token))
+        .andExpect(status().isConflict());
+
+    Integer shoppingCount =
+        jdbcTemplate.queryForObject(
+            "select count(*) from shopping_list_items where user_id = ? and product_id = ?",
+            Integer.class,
+            user.getId(),
+            productId);
+    assertThat(shoppingCount).isEqualTo(1);
+  }
+
+  @Test
+  void addToShoppingListOwnedByAnotherUserReturnsForbidden() throws Exception {
+    String ownerEmail = "stock-add-shopping-owner-" + UUID.randomUUID() + "@test.fr";
+    registerActivateAndLogin(ownerEmail);
+    User owner = userRepository.findByEmail(ownerEmail).orElseThrow();
+    UUID catId = saveCategory(owner, "Prive7", "#292929");
+    UUID typeId = weightTypeId();
+    UUID unitId = kgUnitId(typeId);
+    UUID productId = insertProduct(owner.getId(), catId, "Endive", typeId, unitId, true);
+    UUID stockItemId = insertStockItem(owner.getId(), productId, BigDecimal.TEN, null, null);
+
+    String outsiderToken =
+        registerActivateAndLogin("stock-add-shopping-outsider-" + UUID.randomUUID() + "@test.fr");
+
+    mockMvc
+        .perform(
+            post("/api/stock-items/" + stockItemId + "/add-to-shopping-list")
+                .header("Authorization", "Bearer " + outsiderToken))
+        .andExpect(status().isForbidden());
+  }
+
+  @Test
+  void addToShoppingListWithUnknownStockItemReturnsNotFound() throws Exception {
+    String token =
+        registerActivateAndLogin("stock-add-shopping-404-" + UUID.randomUUID() + "@test.fr");
+
+    mockMvc
+        .perform(
+            post("/api/stock-items/" + UUID.randomUUID() + "/add-to-shopping-list")
+                .header("Authorization", "Bearer " + token))
+        .andExpect(status().isNotFound());
+  }
+
   private UUID weightTypeId() {
     return jdbcTemplate.queryForObject(
         "select id from quantity_types where code = ?", UUID.class, "weight");
