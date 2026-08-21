@@ -54,10 +54,13 @@ services:
       GOOGLE_CLIENT_SECRET: ${GOOGLE_CLIENT_SECRET:-}
       AVATAR_STORAGE_DIR: ${AVATAR_STORAGE_DIR:-/app/uploads/avatars}
       AVATAR_MAX_SIZE: ${AVATAR_MAX_SIZE:-5MB}
+      FIREBASE_CREDENTIALS_PATH: ${FIREBASE_CREDENTIALS_PATH:-file:/app/config/firebase-service-account.json}
+      EXPIRATION_NOTIFICATION_CRON: ${EXPIRATION_NOTIFICATION_CRON:-0 0 8 * * *}
     ports:
       - "${SERVER_PORT:-8080}:8080"
     volumes:
       - stock-api-avatars:/app/uploads/avatars
+      - ${FIREBASE_CREDENTIALS_FILE:-./firebase-service-account.json}:/app/config/firebase-service-account.json:ro
     networks:
       - stock-api-network
 

@@ -90,6 +90,12 @@ app:
     avatar-max-size: ${AVATAR_MAX_SIZE:5MB}
     product-photo-directory: ${PRODUCT_PHOTO_STORAGE_DIR:uploads/products}
     product-photo-max-size: ${PRODUCT_PHOTO_MAX_SIZE:5MB}
+  push:
+    # Chemin (au format Resource Spring : file:/..., classpath:...) du fichier de credentials
+    # du compte de service Firebase, monté en volume Docker.
+    firebase-credentials-path: ${FIREBASE_CREDENTIALS_PATH:file:/app/config/firebase-service-account.json}
+    # Expression cron du job quotidien de notification d'expiration (fuseau Europe/Paris).
+    expiration-job-cron: ${EXPIRATION_NOTIFICATION_CRON:0 0 8 * * *}
   frontend:
     # Base URL de l'application front (utilisée pour construire les liens envoyés par email).
     base-url: ${FRONTEND_BASE_URL:http://localhost:3000}
