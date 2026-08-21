@@ -5,10 +5,12 @@ import java.time.Instant;
 import java.util.HashMap;
 import java.util.Map;
 import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.context.MessageSource;
 import org.springframework.context.i18n.LocaleContextHolder;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
+import org.springframework.http.converter.HttpMessageNotReadableException;
 import org.springframework.security.access.AccessDeniedException;
 import org.springframework.security.authentication.BadCredentialsException;
 import org.springframework.security.authentication.DisabledException;
@@ -23,6 +25,7 @@ import org.springframework.web.servlet.resource.NoResourceFoundException;
 /**
  * Gestionnaire global des exceptions, garantissant un format de réponse JSON homogène et traduit.
  */
+@Slf4j
 @RestControllerAdvice
 @RequiredArgsConstructor
 public class GlobalExceptionHandler {
@@ -135,8 +138,23 @@ public class GlobalExceptionHandler {
     return ResponseEntity.status(statutHttp).body(error);
   }
 
+  @ExceptionHandler(HttpMessageNotReadableException.class)
+  public ResponseEntity<ApiError> handleMalformedRequestBody(
+      HttpMessageNotReadableException ex, HttpServletRequest request) {
+    ApiError error =
+        new ApiError(
+            Instant.now(),
+            HttpStatus.BAD_REQUEST.value(),
+            "Bad Request",
+            translate("error.validation.title"),
+            request.getRequestURI(),
+            Map.of());
+    return ResponseEntity.badRequest().body(error);
+  }
+
   @ExceptionHandler(Exception.class)
   public ResponseEntity<ApiError> handleGenericException(Exception ex, HttpServletRequest request) {
+    log.error("Unexpected error while processing request {}", request.getRequestURI(), ex);
     ApiError error =
         new ApiError(
             Instant.now(),
