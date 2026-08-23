@@ -46,10 +46,11 @@ class PushTokenServiceTest {
         new RegisterPushTokenRequest("token-abc", PushPlatform.ANDROID);
     when(pushTokenRepository.findByToken("token-abc")).thenReturn(Optional.empty());
 
-    pushTokenService.registerToken(currentUser, request);
+    boolean created = pushTokenService.registerToken(currentUser, request);
 
     ArgumentCaptor<PushToken> captor = ArgumentCaptor.forClass(PushToken.class);
     verify(pushTokenRepository).save(captor.capture());
+    assertThat(created).isTrue();
     assertThat(captor.getValue().getToken()).isEqualTo("token-abc");
     assertThat(captor.getValue().getPlatform()).isEqualTo(PushPlatform.ANDROID);
     assertThat(captor.getValue().getUser()).isEqualTo(currentUser);
@@ -68,13 +69,35 @@ class PushTokenServiceTest {
             .build();
     when(pushTokenRepository.findByToken("token-abc")).thenReturn(Optional.of(existing));
 
-    pushTokenService.registerToken(
-        currentUser, new RegisterPushTokenRequest("token-abc", PushPlatform.ANDROID));
+    boolean created =
+        pushTokenService.registerToken(
+            currentUser, new RegisterPushTokenRequest("token-abc", PushPlatform.ANDROID));
 
     ArgumentCaptor<PushToken> captor = ArgumentCaptor.forClass(PushToken.class);
     verify(pushTokenRepository).save(captor.capture());
+    assertThat(created).isFalse();
     assertThat(captor.getValue().getUser()).isEqualTo(currentUser);
     assertThat(captor.getValue().getPlatform()).isEqualTo(PushPlatform.ANDROID);
+  }
+
+  @Test
+  void registerTokenReturnsFalseWhenAlreadyOwnedByCurrentUser() {
+    User currentUser = user(UUID.randomUUID());
+    PushToken existing =
+        PushToken.builder()
+            .id(UUID.randomUUID())
+            .token("token-abc")
+            .user(currentUser)
+            .platform(PushPlatform.ANDROID)
+            .build();
+    when(pushTokenRepository.findByToken("token-abc")).thenReturn(Optional.of(existing));
+
+    boolean created =
+        pushTokenService.registerToken(
+            currentUser, new RegisterPushTokenRequest("token-abc", PushPlatform.ANDROID));
+
+    assertThat(created).isFalse();
+    verify(pushTokenRepository).save(existing);
   }
 
   @Test
