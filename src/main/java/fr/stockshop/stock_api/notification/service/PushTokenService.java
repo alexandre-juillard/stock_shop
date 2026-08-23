@@ -22,14 +22,16 @@ public class PushTokenService {
    * dupliqué.
    */
   @Transactional
-  public void registerToken(User currentUser, RegisterPushTokenRequest request) {
+  public boolean registerToken(User currentUser, RegisterPushTokenRequest request) {
+    var existingPushToken = pushTokenRepository.findByToken(request.token());
+    boolean created = existingPushToken.isEmpty();
+
     PushToken pushToken =
-        pushTokenRepository
-            .findByToken(request.token())
-            .orElseGet(() -> PushToken.builder().token(request.token()).build());
+        existingPushToken.orElseGet(() -> PushToken.builder().token(request.token()).build());
     pushToken.setUser(currentUser);
     pushToken.setPlatform(request.platform());
     pushTokenRepository.save(pushToken);
+    return created;
   }
 
   @Transactional
