@@ -48,8 +48,8 @@ class PushTokenIntegrationTest {
                 .contentType(MediaType.APPLICATION_JSON)
                 .content(
                     objectMapper.writeValueAsString(
-                        Map.of("token", deviceToken, "platform", "ANDROID"))))
-        .andExpect(status().isNoContent());
+                        Map.of("token", deviceToken, "platform", "android"))))
+        .andExpect(status().isCreated());
 
     Integer count =
         jdbcTemplate.queryForObject(
@@ -59,6 +59,37 @@ class PushTokenIntegrationTest {
             "select platform from push_tokens where token = ?", String.class, deviceToken);
     assertThat(count).isEqualTo(1);
     assertThat(platform).isEqualTo("ANDROID");
+  }
+
+  @Test
+  void registerTokenReturnsOkWhenAlreadyRegisteredBySameUser() throws Exception {
+    String token = registerActivateAndLogin("push-idempotent-" + UUID.randomUUID() + "@test.fr");
+    String deviceToken = "device-idempotent-" + UUID.randomUUID();
+
+    mockMvc
+        .perform(
+            post("/api/push-tokens")
+                .header("Authorization", "Bearer " + token)
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(
+                    objectMapper.writeValueAsString(
+                        Map.of("token", deviceToken, "platform", "android"))))
+        .andExpect(status().isCreated());
+
+    mockMvc
+        .perform(
+            post("/api/push-tokens")
+                .header("Authorization", "Bearer " + token)
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(
+                    objectMapper.writeValueAsString(
+                        Map.of("token", deviceToken, "platform", "android"))))
+        .andExpect(status().isOk());
+
+    Integer count =
+        jdbcTemplate.queryForObject(
+            "select count(*) from push_tokens where token = ?", Integer.class, deviceToken);
+    assertThat(count).isEqualTo(1);
   }
 
   @Test
@@ -76,8 +107,8 @@ class PushTokenIntegrationTest {
                 .contentType(MediaType.APPLICATION_JSON)
                 .content(
                     objectMapper.writeValueAsString(
-                        Map.of("token", deviceToken, "platform", "ANDROID"))))
-        .andExpect(status().isNoContent());
+                        Map.of("token", deviceToken, "platform", "android"))))
+        .andExpect(status().isCreated());
 
     mockMvc
         .perform(
@@ -86,8 +117,8 @@ class PushTokenIntegrationTest {
                 .contentType(MediaType.APPLICATION_JSON)
                 .content(
                     objectMapper.writeValueAsString(
-                        Map.of("token", deviceToken, "platform", "IOS"))))
-        .andExpect(status().isNoContent());
+                        Map.of("token", deviceToken, "platform", "ios"))))
+        .andExpect(status().isOk());
 
     Integer count =
         jdbcTemplate.queryForObject(
@@ -131,6 +162,22 @@ class PushTokenIntegrationTest {
   }
 
   @Test
+  void registerTokenRejectsInvalidPlatform() throws Exception {
+    String token =
+        registerActivateAndLogin("push-invalid-platform-" + UUID.randomUUID() + "@test.fr");
+
+    mockMvc
+        .perform(
+            post("/api/push-tokens")
+                .header("Authorization", "Bearer " + token)
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(
+                    objectMapper.writeValueAsString(
+                        Map.of("token", "device-x", "platform", "windows"))))
+        .andExpect(status().isBadRequest());
+  }
+
+  @Test
   void registerTokenRequiresAuthentication() throws Exception {
     mockMvc
         .perform(
@@ -138,7 +185,7 @@ class PushTokenIntegrationTest {
                 .contentType(MediaType.APPLICATION_JSON)
                 .content(
                     objectMapper.writeValueAsString(
-                        Map.of("token", "device-x", "platform", "ANDROID"))))
+                        Map.of("token", "device-x", "platform", "android"))))
         .andExpect(status().isUnauthorized());
   }
 
@@ -153,14 +200,13 @@ class PushTokenIntegrationTest {
                 .contentType(MediaType.APPLICATION_JSON)
                 .content(
                     objectMapper.writeValueAsString(
-                        Map.of("token", deviceToken, "platform", "ANDROID"))))
-        .andExpect(status().isNoContent());
+                        Map.of("token", deviceToken, "platform", "android"))))
+        .andExpect(status().isCreated());
 
     mockMvc
         .perform(
-            delete("/api/push-tokens")
-                .header("Authorization", "Bearer " + token)
-                .param("token", deviceToken))
+            delete("/api/push-tokens/{token}", deviceToken)
+                .header("Authorization", "Bearer " + token))
         .andExpect(status().isNoContent());
 
     Integer count =
@@ -175,9 +221,8 @@ class PushTokenIntegrationTest {
 
     mockMvc
         .perform(
-            delete("/api/push-tokens")
-                .header("Authorization", "Bearer " + token)
-                .param("token", "unknown-token-" + UUID.randomUUID()))
+            delete("/api/push-tokens/{token}", "unknown-token-" + UUID.randomUUID())
+                .header("Authorization", "Bearer " + token))
         .andExpect(status().isNotFound());
   }
 
@@ -195,14 +240,13 @@ class PushTokenIntegrationTest {
                 .contentType(MediaType.APPLICATION_JSON)
                 .content(
                     objectMapper.writeValueAsString(
-                        Map.of("token", deviceToken, "platform", "ANDROID"))))
-        .andExpect(status().isNoContent());
+                        Map.of("token", deviceToken, "platform", "android"))))
+        .andExpect(status().isCreated());
 
     mockMvc
         .perform(
-            delete("/api/push-tokens")
-                .header("Authorization", "Bearer " + tokenUser2)
-                .param("token", deviceToken))
+            delete("/api/push-tokens/{token}", deviceToken)
+                .header("Authorization", "Bearer " + tokenUser2))
         .andExpect(status().isForbidden());
   }
 
