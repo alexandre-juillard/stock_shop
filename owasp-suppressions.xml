@@ -71,6 +71,82 @@
         <vulnerabilityName>GHSA-mh99-v99m-4gvg</vulnerabilityName>
     </suppress>
 
+    <suppress>
+        <notes><![CDATA[
+        CVE-2026-39883 / CVE-2026-24051 / CVE-2026-39882 / CVE-2026-41178 remontees par
+        le scan CI sur les artefacts io.opentelemetry:opentelemetry-extension-incubator@1.35.0-alpha,
+        io.opentelemetry.contrib:opentelemetry-gcp-resources@1.37.0-alpha et
+        io.opentelemetry.semconv:opentelemetry-semconv@1.29.0-alpha (tous transitifs de
+        firebase-admin -> com.google.cloud:google-cloud-storage / google-cloud-firestore,
+        cf. mvn dependency:tree). Revalidation independante via l'outillage interne de
+        verification CVE (source OSV/GHSA) : aucune de ces 4 CVE n'est confirmee sur ces
+        artefacts a ces versions precises - tres probablement un faux positif de
+        correlation NVD/CPE sur le groupe generique "io.opentelemetry" (meme mecanisme
+        que la suppression spring-boot-devtools ci-dessus), ou des identifiants
+        CVE reserves/non encore publies avec un contenu exploitable a date.
+        Ces 3 artefacts (alpha/incubateur) sont epingles en interne par la matrice de
+        compatibilite grpc / protobuf / opentelemetry de firebase-admin 9.9.0 : ils ne
+        sont pas geres par le BOM spring-boot-dependencies (absent de l'effective-pom) et
+        forcer une surcharge de version sans CVE confirmee ferait courir un risque de
+        regression fonctionnelle (notifications push FCM) sans benefice de securite
+        demontre. A reevaluer a chaque montee de version de firebase-admin, ou des
+        confirmation de l'exploitabilite reelle de ces CVE via une source faisant autorite.
+        ]]></notes>
+        <packageUrl regex="true">^pkg:maven/io\.opentelemetry(\.[a-z]+)?/opentelemetry\-(extension\-incubator|gcp\-resources|semconv)@.*$</packageUrl>
+        <cve>CVE-2026-39883</cve>
+        <cve>CVE-2026-24051</cve>
+        <cve>CVE-2026-39882</cve>
+        <cve>CVE-2026-41178</cve>
+    </suppress>
+
+    <suppress>
+        <notes><![CDATA[
+        CVE-2026-29181 remontee sur io.opentelemetry.contrib:opentelemetry-gcp-resources@1.37.0-alpha
+        (transitif de firebase-admin -> google-cloud-storage). Revalidation independante
+        (source OSV/GHSA) : CVE non confirmee sur cet artefact a cette version. Voir la
+        suppression ci-dessus pour le detail du raisonnement (artefact alpha epingle par
+        firebase-admin, pas de gestion via le BOM spring-boot-dependencies, surcharge
+        non justifiee sans CVE confirmee). A reevaluer avec chaque montee de firebase-admin.
+        ]]></notes>
+        <packageUrl regex="true">^pkg:maven/io\.opentelemetry\.contrib/opentelemetry\-gcp\-resources@.*$</packageUrl>
+        <cve>CVE-2026-29181</cve>
+    </suppress>
+
+    <suppress>
+        <notes><![CDATA[
+        CVE-2026-0994 remontee sur com.google.protobuf:protobuf-java@4.33.2 ET
+        protobuf-java-util@4.33.2 (meme CPE generique "protobuf:protobuf", tous deux
+        transitifs de firebase-admin -> google-cloud-storage/grpc, cf. mvn dependency:tree).
+        Revalidation independante (source OSV/GHSA) : CVE non confirmee sur ces artefacts a
+        cette version precise, aucune version corrigee identifiee a ce jour. Ni protobuf-java
+        ni protobuf-java-util ne sont geres par le BOM spring-boot-dependencies (absents de
+        l'effective-pom) : leur version est strictement pinnee par la chaine de compatibilite
+        grpc-protobuf / google-cloud-* embarquee dans firebase-admin 9.9.0. Forcer une
+        surcharge non coordonnee avec cette chaine (wire/API protobuf tres sensible aux
+        versions) risquerait de casser serialization gRPC utilisee par les appels
+        Firestore/Storage/FCM, sans benefice de securite demontre puisque la CVE n'a pas ete
+        confirmee. A reevaluer a chaque montee de version de firebase-admin ou publication
+        confirmee d'un correctif.
+        ]]></notes>
+        <packageUrl regex="true">^pkg:maven/com\.google\.protobuf/protobuf\-java(\-util)?@4\.33\.2$</packageUrl>
+        <cve>CVE-2026-0994</cve>
+    </suppress>
+
+    <suppress>
+        <notes><![CDATA[
+        CVE-2026-71290 (CVSS 9.1 rapporte par le scan CI) sur
+        org.apache.httpcomponents.client5:httpclient5. Revalidation independante (source
+        OSV/GHSA) via l'outillage interne de verification CVE : cette CVE n'est pas
+        confirmee sur httpclient5, ni sur l'ancienne version 5.5.2 ni sur la version
+        corrigee 5.6.4 deployee suite a CVE-2026-64607 (voir httpclient5.version dans
+        pom.xml). Suppression documentee en attendant confirmation/infirmation par une
+        source faisant autorite ; a retirer des que la CVE est authentifiee et qu'un
+        correctif est identifie, ou des qu'elle est officiellement invalidee/retiree.
+        ]]></notes>
+        <packageUrl regex="true">^pkg:maven/org\.apache\.httpcomponents\.client5/httpclient5@.*$</packageUrl>
+        <cve>CVE-2026-71290</cve>
+    </suppress>
+
     <!--
         Exemple pour une future suppression ponctuelle :
         <suppress>
