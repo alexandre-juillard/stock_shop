@@ -13,6 +13,8 @@ public interface ShoppingListItemRepository extends JpaRepository<ShoppingListIt
 
   boolean existsByUserAndProduct(User user, Product product);
 
+  long deleteAllByUser(User user);
+
   @Query(
       "SELECT s FROM ShoppingListItem s "
           + "JOIN FETCH s.product p "
