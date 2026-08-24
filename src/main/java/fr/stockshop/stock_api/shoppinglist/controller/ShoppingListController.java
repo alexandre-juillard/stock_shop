@@ -1,6 +1,7 @@
 package fr.stockshop.stock_api.shoppinglist.controller;
 
 import fr.stockshop.stock_api.shoppinglist.dto.AddShoppingListItemRequest;
+import fr.stockshop.stock_api.shoppinglist.dto.CheckThresholdsResponse;
 import fr.stockshop.stock_api.shoppinglist.dto.ShoppingListCategoryGroupResponse;
 import fr.stockshop.stock_api.shoppinglist.dto.ShoppingListItemResponse;
 import fr.stockshop.stock_api.shoppinglist.service.ShoppingListService;
@@ -59,5 +60,12 @@ public class ShoppingListController {
   public ResponseEntity<Void> clearShoppingList(@AuthenticationPrincipal User currentUser) {
     shoppingListService.clearList(currentUser);
     return ResponseEntity.noContent().build();
+  }
+
+  @PostMapping("/check-thresholds")
+  @Operation(summary = "Verifier les seuils bas et synchroniser automatiquement la liste")
+  public ResponseEntity<CheckThresholdsResponse> checkThresholds(
+      @AuthenticationPrincipal User currentUser) {
+    return ResponseEntity.ok(shoppingListService.checkThresholds(currentUser));
   }
 }

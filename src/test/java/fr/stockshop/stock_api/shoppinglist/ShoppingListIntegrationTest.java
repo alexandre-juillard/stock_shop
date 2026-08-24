@@ -391,6 +391,138 @@ class ShoppingListIntegrationTest {
     mockMvc.perform(delete("/api/shopping-list")).andExpect(status().isUnauthorized());
   }
 
+  @Test
+  void checkThresholdsAddsOnlyMissingLowItemsAndReturnsAddedProducts() throws Exception {
+    String email = "shopping-thresholds-" + UUID.randomUUID() + "@test.fr";
+    String token = registerActivateAndLogin(email);
+    User user = userRepository.findByEmail(email).orElseThrow();
+
+    String otherEmail = "shopping-thresholds-other-" + UUID.randomUUID() + "@test.fr";
+    registerActivateAndLogin(otherEmail);
+    User other = userRepository.findByEmail(otherEmail).orElseThrow();
+
+    UUID typeId = weightTypeId();
+    UUID unitId = kgUnitId(typeId);
+    UUID categoryId = saveCategory(user, "Fruits", "#22AA22");
+    UUID otherCategoryId = saveCategory(other, "Legumes", "#AA5500");
+
+    UUID toAddProductId = insertProduct(user.getId(), categoryId, "Pomme", typeId, unitId, true);
+    UUID alreadyInListProductId =
+        insertProduct(user.getId(), categoryId, "Banane", typeId, unitId, true);
+    UUID noThresholdProductId =
+        insertProduct(user.getId(), categoryId, "Poire", typeId, unitId, true);
+    UUID aboveThresholdProductId =
+        insertProduct(user.getId(), categoryId, "Mangue", typeId, unitId, true);
+    UUID invisibleLowProductId =
+        insertProduct(user.getId(), categoryId, "ProduitCache", typeId, unitId, false);
+    UUID otherUserLowProductId =
+        insertProduct(other.getId(), otherCategoryId, "ProduitAutreUser", typeId, unitId, true);
+
+    insertStockItem(user.getId(), toAddProductId, new BigDecimal("1"), new BigDecimal("2"), null);
+    insertStockItem(
+        user.getId(), alreadyInListProductId, new BigDecimal("1"), new BigDecimal("2"), null);
+    insertStockItem(user.getId(), noThresholdProductId, new BigDecimal("1"), null, null);
+    insertStockItem(
+        user.getId(), aboveThresholdProductId, new BigDecimal("5"), new BigDecimal("2"), null);
+    insertStockItem(
+        user.getId(), invisibleLowProductId, new BigDecimal("1"), new BigDecimal("2"), null);
+    insertStockItem(
+        other.getId(), otherUserLowProductId, new BigDecimal("1"), new BigDecimal("2"), null);
+
+    insertShoppingListItem(user.getId(), alreadyInListProductId, false, null, null, false);
+
+    mockMvc
+        .perform(
+            post("/api/shopping-list/check-thresholds")
+                .header("Authorization", "Bearer " + token)
+                .contentType(MediaType.APPLICATION_JSON))
+        .andExpect(status().isOk())
+        .andExpect(jsonPath("$.addedCount").value(1))
+        .andExpect(jsonPath("$.addedProducts.length()").value(1))
+        .andExpect(jsonPath("$.addedProducts[0].id").value(toAddProductId.toString()))
+        .andExpect(jsonPath("$.addedProducts[0].name").value("Pomme"));
+
+    Integer insertedAutoCount =
+        jdbcTemplate.queryForObject(
+            "select count(*) from shopping_list_items"
+                + " where user_id = ? and product_id = ?"
+                + " and added_automatically = true and is_checked = false",
+            Integer.class,
+            user.getId(),
+            toAddProductId);
+    assertThat(insertedAutoCount).isEqualTo(1);
+
+    Integer duplicateCount =
+        jdbcTemplate.queryForObject(
+            "select count(*) from shopping_list_items where user_id = ? and product_id = ?",
+            Integer.class,
+            user.getId(),
+            alreadyInListProductId);
+    assertThat(duplicateCount).isEqualTo(1);
+
+    Integer noThresholdCount =
+        jdbcTemplate.queryForObject(
+            "select count(*) from shopping_list_items where user_id = ? and product_id = ?",
+            Integer.class,
+            user.getId(),
+            noThresholdProductId);
+    assertThat(noThresholdCount).isZero();
+
+    Integer aboveThresholdCount =
+        jdbcTemplate.queryForObject(
+            "select count(*) from shopping_list_items where user_id = ? and product_id = ?",
+            Integer.class,
+            user.getId(),
+            aboveThresholdProductId);
+    assertThat(aboveThresholdCount).isZero();
+
+    Integer invisibleCount =
+        jdbcTemplate.queryForObject(
+            "select count(*) from shopping_list_items where user_id = ? and product_id = ?",
+            Integer.class,
+            user.getId(),
+            invisibleLowProductId);
+    assertThat(invisibleCount).isZero();
+
+    Integer otherUserCount =
+        jdbcTemplate.queryForObject(
+            "select count(*) from shopping_list_items where user_id = ? and product_id = ?",
+            Integer.class,
+            other.getId(),
+            otherUserLowProductId);
+    assertThat(otherUserCount).isZero();
+  }
+
+  @Test
+  void checkThresholdsReturnsEmptyPayloadWhenNothingToAdd() throws Exception {
+    String email = "shopping-thresholds-empty-" + UUID.randomUUID() + "@test.fr";
+    String token = registerActivateAndLogin(email);
+    User user = userRepository.findByEmail(email).orElseThrow();
+
+    UUID typeId = weightTypeId();
+    UUID unitId = kgUnitId(typeId);
+    UUID categoryId = saveCategory(user, "Fruits", "#22AA22");
+    UUID productId = insertProduct(user.getId(), categoryId, "Pomme", typeId, unitId, true);
+
+    insertStockItem(user.getId(), productId, new BigDecimal("5"), new BigDecimal("2"), null);
+
+    mockMvc
+        .perform(
+            post("/api/shopping-list/check-thresholds")
+                .header("Authorization", "Bearer " + token)
+                .contentType(MediaType.APPLICATION_JSON))
+        .andExpect(status().isOk())
+        .andExpect(jsonPath("$.addedCount").value(0))
+        .andExpect(jsonPath("$.addedProducts.length()").value(0));
+  }
+
+  @Test
+  void checkThresholdsRequiresAuthentication() throws Exception {
+    mockMvc
+        .perform(post("/api/shopping-list/check-thresholds"))
+        .andExpect(status().isUnauthorized());
+  }
+
   private UUID weightTypeId() {
     return jdbcTemplate.queryForObject(
         "select id from quantity_types where code = ?", UUID.class, "weight");
@@ -429,6 +561,25 @@ class ShoppingListIntegrationTest {
         baseUnitId,
         visible);
     return productId;
+  }
+
+  private UUID insertStockItem(
+      UUID userId,
+      UUID productId,
+      BigDecimal quantity,
+      BigDecimal lowThreshold,
+      java.time.LocalDate expirationDate) {
+    UUID stockItemId = UUID.randomUUID();
+    jdbcTemplate.update(
+        "insert into stock_items (id, user_id, product_id, quantity, low_threshold, expiration_date)"
+            + " values (?, ?, ?, ?, ?, ?)",
+        stockItemId,
+        userId,
+        productId,
+        quantity,
+        lowThreshold,
+        expirationDate);
+    return stockItemId;
   }
 
   private UUID insertShoppingListItem(
