@@ -1,11 +1,16 @@
 package fr.stockshop.stock_api.shoppinglist.service;
 
 import fr.stockshop.stock_api.exception.ProductNotFoundException;
+import fr.stockshop.stock_api.exception.QuantityUnitNotFoundException;
+import fr.stockshop.stock_api.exception.ShoppingListCheckedUnitMismatchException;
 import fr.stockshop.stock_api.exception.ShoppingListItemAlreadyExistsException;
 import fr.stockshop.stock_api.exception.ShoppingListItemNotFoundException;
 import fr.stockshop.stock_api.product.entity.Product;
 import fr.stockshop.stock_api.product.repository.ProductRepository;
+import fr.stockshop.stock_api.quantity.entity.QuantityUnit;
+import fr.stockshop.stock_api.quantity.repository.QuantityUnitRepository;
 import fr.stockshop.stock_api.shoppinglist.dto.AddShoppingListItemRequest;
+import fr.stockshop.stock_api.shoppinglist.dto.CheckShoppingListItemRequest;
 import fr.stockshop.stock_api.shoppinglist.dto.CheckThresholdAddedProductResponse;
 import fr.stockshop.stock_api.shoppinglist.dto.CheckThresholdsResponse;
 import fr.stockshop.stock_api.shoppinglist.dto.ShoppingListCategoryGroupResponse;
@@ -15,6 +20,7 @@ import fr.stockshop.stock_api.shoppinglist.entity.ShoppingListItem;
 import fr.stockshop.stock_api.shoppinglist.mapper.ShoppingListMapper;
 import fr.stockshop.stock_api.shoppinglist.repository.ShoppingListItemRepository;
 import fr.stockshop.stock_api.user.entity.User;
+import java.time.Instant;
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -32,6 +38,7 @@ public class ShoppingListService {
 
   private final ShoppingListItemRepository shoppingListItemRepository;
   private final ProductRepository productRepository;
+  private final QuantityUnitRepository quantityUnitRepository;
   private final ShoppingListMapper shoppingListMapper;
 
   @Transactional(readOnly = true)
@@ -92,6 +99,50 @@ public class ShoppingListService {
             .toList();
 
     return new CheckThresholdsResponse(addedProducts.size(), addedProducts);
+  }
+
+  @Transactional
+  public ShoppingListItemResponse checkItem(
+      User currentUser, UUID shoppingListItemId, CheckShoppingListItemRequest request) {
+    ShoppingListItem shoppingListItem =
+        shoppingListItemRepository
+            .findById(shoppingListItemId)
+            .orElseThrow(() -> new ShoppingListItemNotFoundException(shoppingListItemId));
+    assertOwnership(shoppingListItem, currentUser);
+
+    QuantityUnit checkedUnit =
+        quantityUnitRepository
+            .findById(request.checkedUnitId())
+            .orElseThrow(() -> new QuantityUnitNotFoundException(request.checkedUnitId()));
+
+    UUID productQuantityTypeId = shoppingListItem.getProduct().getQuantityType().getId();
+    UUID checkedUnitQuantityTypeId = checkedUnit.getQuantityType().getId();
+    if (!checkedUnitQuantityTypeId.equals(productQuantityTypeId)) {
+      throw new ShoppingListCheckedUnitMismatchException(shoppingListItemId, checkedUnit.getId());
+    }
+
+    shoppingListItem.setChecked(true);
+    shoppingListItem.setCheckedQuantity(request.checkedQuantity());
+    shoppingListItem.setCheckedUnit(checkedUnit);
+    shoppingListItem.setCheckedAt(Instant.now());
+
+    return shoppingListMapper.toItemResponse(shoppingListItemRepository.save(shoppingListItem));
+  }
+
+  @Transactional
+  public ShoppingListItemResponse uncheckItem(User currentUser, UUID shoppingListItemId) {
+    ShoppingListItem shoppingListItem =
+        shoppingListItemRepository
+            .findById(shoppingListItemId)
+            .orElseThrow(() -> new ShoppingListItemNotFoundException(shoppingListItemId));
+    assertOwnership(shoppingListItem, currentUser);
+
+    shoppingListItem.setChecked(false);
+    shoppingListItem.setCheckedQuantity(null);
+    shoppingListItem.setCheckedUnit(null);
+    shoppingListItem.setCheckedAt(null);
+
+    return shoppingListMapper.toItemResponse(shoppingListItemRepository.save(shoppingListItem));
   }
 
   private ShoppingListItem saveNewItem(
