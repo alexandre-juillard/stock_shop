@@ -3,6 +3,7 @@ package fr.stockshop.stock_api.shoppinglist.controller;
 import fr.stockshop.stock_api.shoppinglist.dto.AddShoppingListItemRequest;
 import fr.stockshop.stock_api.shoppinglist.dto.CheckShoppingListItemRequest;
 import fr.stockshop.stock_api.shoppinglist.dto.CheckThresholdsResponse;
+import fr.stockshop.stock_api.shoppinglist.dto.FinishShoppingListResponse;
 import fr.stockshop.stock_api.shoppinglist.dto.ShoppingListCategoryGroupResponse;
 import fr.stockshop.stock_api.shoppinglist.dto.ShoppingListItemResponse;
 import fr.stockshop.stock_api.shoppinglist.service.ShoppingListService;
@@ -85,5 +86,12 @@ public class ShoppingListController {
   public ResponseEntity<ShoppingListItemResponse> uncheckShoppingListItem(
       @AuthenticationPrincipal User currentUser, @PathVariable UUID id) {
     return ResponseEntity.ok(shoppingListService.uncheckItem(currentUser, id));
+  }
+
+  @PostMapping("/finish")
+  @Operation(summary = "Finaliser les courses et mettre en stock les articles coches")
+  public ResponseEntity<FinishShoppingListResponse> finishShoppingList(
+      @AuthenticationPrincipal User currentUser) {
+    return ResponseEntity.ok(shoppingListService.finishShoppingList(currentUser));
   }
 }

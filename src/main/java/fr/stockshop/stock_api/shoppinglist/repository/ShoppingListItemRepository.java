@@ -25,6 +25,15 @@ public interface ShoppingListItemRepository extends JpaRepository<ShoppingListIt
   List<ShoppingListItem> findVisibleByUserOrderByCategoryAndProductName(@Param("user") User user);
 
   @Query(
+      "SELECT s FROM ShoppingListItem s "
+          + "JOIN FETCH s.product p "
+          + "JOIN FETCH p.baseUnit bu "
+          + "LEFT JOIN FETCH s.checkedUnit cu "
+          + "WHERE s.user = :user AND s.checked = true "
+          + "ORDER BY s.addedAt ASC")
+  List<ShoppingListItem> findCheckedByUserOrderByAddedAtAsc(@Param("user") User user);
+
+  @Query(
       value =
           "WITH inserted AS ("
               + " INSERT INTO shopping_list_items"
