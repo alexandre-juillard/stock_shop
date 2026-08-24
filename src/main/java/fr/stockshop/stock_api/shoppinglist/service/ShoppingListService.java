@@ -6,6 +6,8 @@ import fr.stockshop.stock_api.exception.ShoppingListItemNotFoundException;
 import fr.stockshop.stock_api.product.entity.Product;
 import fr.stockshop.stock_api.product.repository.ProductRepository;
 import fr.stockshop.stock_api.shoppinglist.dto.AddShoppingListItemRequest;
+import fr.stockshop.stock_api.shoppinglist.dto.CheckThresholdAddedProductResponse;
+import fr.stockshop.stock_api.shoppinglist.dto.CheckThresholdsResponse;
 import fr.stockshop.stock_api.shoppinglist.dto.ShoppingListCategoryGroupResponse;
 import fr.stockshop.stock_api.shoppinglist.dto.ShoppingListCategorySummaryResponse;
 import fr.stockshop.stock_api.shoppinglist.dto.ShoppingListItemResponse;
@@ -78,6 +80,18 @@ public class ShoppingListService {
   @Transactional
   public void clearList(User currentUser) {
     shoppingListItemRepository.deleteAllByUser(currentUser);
+  }
+
+  @Transactional
+  public CheckThresholdsResponse checkThresholds(User currentUser) {
+    List<CheckThresholdAddedProductResponse> addedProducts =
+        shoppingListItemRepository.addMissingLowThresholdItems(currentUser.getId()).stream()
+            .map(
+                product ->
+                    new CheckThresholdAddedProductResponse(product.getId(), product.getName()))
+            .toList();
+
+    return new CheckThresholdsResponse(addedProducts.size(), addedProducts);
   }
 
   private ShoppingListItem saveNewItem(

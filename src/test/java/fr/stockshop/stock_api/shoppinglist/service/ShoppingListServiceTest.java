@@ -16,6 +16,7 @@ import fr.stockshop.stock_api.exception.ShoppingListItemNotFoundException;
 import fr.stockshop.stock_api.product.entity.Product;
 import fr.stockshop.stock_api.product.repository.ProductRepository;
 import fr.stockshop.stock_api.shoppinglist.dto.AddShoppingListItemRequest;
+import fr.stockshop.stock_api.shoppinglist.dto.CheckThresholdsResponse;
 import fr.stockshop.stock_api.shoppinglist.dto.ShoppingListCategoryGroupResponse;
 import fr.stockshop.stock_api.shoppinglist.dto.ShoppingListCategorySummaryResponse;
 import fr.stockshop.stock_api.shoppinglist.dto.ShoppingListItemResponse;
@@ -283,6 +284,59 @@ class ShoppingListServiceTest {
     shoppingListService.clearList(currentUser);
 
     verify(shoppingListItemRepository).deleteAllByUser(eq(currentUser));
+  }
+
+  @Test
+  void checkThresholdsReturnsAddedProductsAndCount() {
+    User currentUser = User.builder().id(UUID.randomUUID()).build();
+    UUID product1 = UUID.randomUUID();
+    UUID product2 = UUID.randomUUID();
+
+    ShoppingListItemRepository.AddedProductProjection added1 =
+        addedProductProjection(product1, "Pomme");
+    ShoppingListItemRepository.AddedProductProjection added2 =
+        addedProductProjection(product2, "Carotte");
+
+    when(shoppingListItemRepository.addMissingLowThresholdItems(currentUser.getId()))
+        .thenReturn(List.of(added1, added2));
+
+    CheckThresholdsResponse response = shoppingListService.checkThresholds(currentUser);
+
+    assertThat(response.addedCount()).isEqualTo(2);
+    assertThat(response.addedProducts())
+        .extracting(product -> product.id().toString(), product -> product.name())
+        .containsExactly(
+            org.assertj.core.groups.Tuple.tuple(product1.toString(), "Pomme"),
+            org.assertj.core.groups.Tuple.tuple(product2.toString(), "Carotte"));
+    verify(shoppingListItemRepository).addMissingLowThresholdItems(currentUser.getId());
+  }
+
+  @Test
+  void checkThresholdsReturnsEmptyPayloadWhenNothingAdded() {
+    User currentUser = User.builder().id(UUID.randomUUID()).build();
+    when(shoppingListItemRepository.addMissingLowThresholdItems(currentUser.getId()))
+        .thenReturn(List.of());
+
+    CheckThresholdsResponse response = shoppingListService.checkThresholds(currentUser);
+
+    assertThat(response.addedCount()).isZero();
+    assertThat(response.addedProducts()).isEmpty();
+    verify(shoppingListItemRepository).addMissingLowThresholdItems(currentUser.getId());
+  }
+
+  private ShoppingListItemRepository.AddedProductProjection addedProductProjection(
+      UUID id, String name) {
+    return new ShoppingListItemRepository.AddedProductProjection() {
+      @Override
+      public UUID getId() {
+        return id;
+      }
+
+      @Override
+      public String getName() {
+        return name;
+      }
+    };
   }
 
   private Category category(String name, String color) {
