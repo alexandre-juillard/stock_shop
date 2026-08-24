@@ -13,6 +13,7 @@ import fr.stockshop.stock_api.category.entity.Category;
 import fr.stockshop.stock_api.exception.ProductNotFoundException;
 import fr.stockshop.stock_api.exception.QuantityUnitNotFoundException;
 import fr.stockshop.stock_api.exception.ShoppingListCheckedUnitMismatchException;
+import fr.stockshop.stock_api.exception.ShoppingListFinishIncompleteItemsException;
 import fr.stockshop.stock_api.exception.ShoppingListItemAlreadyExistsException;
 import fr.stockshop.stock_api.exception.ShoppingListItemNotFoundException;
 import fr.stockshop.stock_api.product.entity.Product;
@@ -23,6 +24,7 @@ import fr.stockshop.stock_api.quantity.repository.QuantityUnitRepository;
 import fr.stockshop.stock_api.shoppinglist.dto.AddShoppingListItemRequest;
 import fr.stockshop.stock_api.shoppinglist.dto.CheckShoppingListItemRequest;
 import fr.stockshop.stock_api.shoppinglist.dto.CheckThresholdsResponse;
+import fr.stockshop.stock_api.shoppinglist.dto.FinishShoppingListResponse;
 import fr.stockshop.stock_api.shoppinglist.dto.ShoppingListCategoryGroupResponse;
 import fr.stockshop.stock_api.shoppinglist.dto.ShoppingListCategorySummaryResponse;
 import fr.stockshop.stock_api.shoppinglist.dto.ShoppingListCheckedUnitResponse;
@@ -31,6 +33,8 @@ import fr.stockshop.stock_api.shoppinglist.dto.ShoppingListProductSummaryRespons
 import fr.stockshop.stock_api.shoppinglist.entity.ShoppingListItem;
 import fr.stockshop.stock_api.shoppinglist.mapper.ShoppingListMapper;
 import fr.stockshop.stock_api.shoppinglist.repository.ShoppingListItemRepository;
+import fr.stockshop.stock_api.stock.entity.StockItem;
+import fr.stockshop.stock_api.stock.repository.StockItemRepository;
 import fr.stockshop.stock_api.user.entity.User;
 import java.math.BigDecimal;
 import java.time.Instant;
@@ -52,6 +56,7 @@ class ShoppingListServiceTest {
   @Mock private ShoppingListItemRepository shoppingListItemRepository;
   @Mock private ProductRepository productRepository;
   @Mock private QuantityUnitRepository quantityUnitRepository;
+  @Mock private StockItemRepository stockItemRepository;
   @Mock private ShoppingListMapper shoppingListMapper;
 
   @InjectMocks private ShoppingListService shoppingListService;
@@ -542,6 +547,131 @@ class ShoppingListServiceTest {
     assertThat(response.addedCount()).isZero();
     assertThat(response.addedProducts()).isEmpty();
     verify(shoppingListItemRepository).addMissingLowThresholdItems(currentUser.getId());
+  }
+
+  @Test
+  void finishShoppingListUpdatesExistingStockCreatesMissingAndDeletesProcessedCheckedItems() {
+    User currentUser = User.builder().id(UUID.randomUUID()).build();
+    QuantityType weightType = QuantityType.builder().id(UUID.randomUUID()).code("weight").build();
+    QuantityUnit kg =
+        QuantityUnit.builder()
+            .id(UUID.randomUUID())
+            .quantityType(weightType)
+            .code("kg")
+            .conversionFactor(BigDecimal.ONE)
+            .build();
+    QuantityUnit g =
+        QuantityUnit.builder()
+            .id(UUID.randomUUID())
+            .quantityType(weightType)
+            .code("g")
+            .conversionFactor(new BigDecimal("0.001"))
+            .build();
+
+    Product rice = Product.builder().id(UUID.randomUUID()).name("Riz").baseUnit(kg).build();
+    Product pasta = Product.builder().id(UUID.randomUUID()).name("Pates").baseUnit(kg).build();
+
+    ShoppingListItem checkedRice =
+        ShoppingListItem.builder()
+            .id(UUID.randomUUID())
+            .user(currentUser)
+            .product(rice)
+            .checked(true)
+            .checkedQuantity(new BigDecimal("500"))
+            .checkedUnit(g)
+            .build();
+    ShoppingListItem checkedPasta =
+        ShoppingListItem.builder()
+            .id(UUID.randomUUID())
+            .user(currentUser)
+            .product(pasta)
+            .checked(true)
+            .checkedQuantity(new BigDecimal("2"))
+            .checkedUnit(kg)
+            .build();
+
+    StockItem existingRiceStock =
+        StockItem.builder()
+            .id(UUID.randomUUID())
+            .user(currentUser)
+            .product(rice)
+            .quantity(new BigDecimal("1.000"))
+            .build();
+    StockItem createdPastaStock =
+        StockItem.builder()
+            .id(UUID.randomUUID())
+            .user(currentUser)
+            .product(pasta)
+            .quantity(new BigDecimal("2.000"))
+            .build();
+
+    when(shoppingListItemRepository.findCheckedByUserOrderByAddedAtAsc(currentUser))
+        .thenReturn(List.of(checkedRice, checkedPasta));
+    when(stockItemRepository.findByUserAndProduct_IdIn(
+            currentUser, List.of(rice.getId(), pasta.getId())))
+        .thenReturn(List.of(existingRiceStock));
+    when(stockItemRepository.save(any(StockItem.class))).thenReturn(createdPastaStock);
+
+    FinishShoppingListResponse response = shoppingListService.finishShoppingList(currentUser);
+
+    assertThat(response.processedCount()).isEqualTo(2);
+    assertThat(response.results()).hasSize(2);
+    assertThat(response.results().get(0).productId()).isEqualTo(rice.getId());
+    assertThat(response.results().get(0).action()).isEqualTo("updated");
+    assertThat(response.results().get(0).addedQuantity()).isEqualByComparingTo("0.500");
+    assertThat(response.results().get(0).resultingStockQuantity()).isEqualByComparingTo("1.500");
+    assertThat(response.results().get(1).productId()).isEqualTo(pasta.getId());
+    assertThat(response.results().get(1).action()).isEqualTo("created");
+    assertThat(response.results().get(1).addedQuantity()).isEqualByComparingTo("2.000");
+
+    assertThat(existingRiceStock.getQuantity()).isEqualByComparingTo("1.500");
+    verify(stockItemRepository).save(any(StockItem.class));
+    verify(shoppingListItemRepository).deleteAllInBatch(List.of(checkedRice, checkedPasta));
+  }
+
+  @Test
+  void finishShoppingListThrowsBadRequestWhenCheckedItemsAreIncomplete() {
+    User currentUser = User.builder().id(UUID.randomUUID()).build();
+    QuantityType weightType = QuantityType.builder().id(UUID.randomUUID()).code("weight").build();
+    QuantityUnit kg =
+        QuantityUnit.builder().id(UUID.randomUUID()).quantityType(weightType).code("kg").build();
+    Product product = Product.builder().id(UUID.randomUUID()).name("Riz").baseUnit(kg).build();
+
+    ShoppingListItem incompleteItem =
+        ShoppingListItem.builder()
+            .id(UUID.randomUUID())
+            .user(currentUser)
+            .product(product)
+            .checked(true)
+            .checkedQuantity(null)
+            .checkedUnit(kg)
+            .build();
+
+    when(shoppingListItemRepository.findCheckedByUserOrderByAddedAtAsc(currentUser))
+        .thenReturn(List.of(incompleteItem));
+
+    assertThatThrownBy(() -> shoppingListService.finishShoppingList(currentUser))
+        .isInstanceOf(ShoppingListFinishIncompleteItemsException.class);
+
+    verify(stockItemRepository, never())
+        .findByUserAndProduct_IdIn(any(User.class), any(List.class));
+    verify(stockItemRepository, never()).save(any(StockItem.class));
+    verify(shoppingListItemRepository, never()).deleteAllInBatch(any(List.class));
+  }
+
+  @Test
+  void finishShoppingListReturnsEmptyResultWhenNoCheckedItems() {
+    User currentUser = User.builder().id(UUID.randomUUID()).build();
+    when(shoppingListItemRepository.findCheckedByUserOrderByAddedAtAsc(currentUser))
+        .thenReturn(List.of());
+
+    FinishShoppingListResponse response = shoppingListService.finishShoppingList(currentUser);
+
+    assertThat(response.processedCount()).isZero();
+    assertThat(response.results()).isEmpty();
+    verify(stockItemRepository, never())
+        .findByUserAndProduct_IdIn(any(User.class), any(List.class));
+    verify(shoppingListItemRepository, never()).deleteAllInBatch(any(List.class));
   }
 
   private ShoppingListItemRepository.AddedProductProjection addedProductProjection(
