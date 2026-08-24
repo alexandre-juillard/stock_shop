@@ -1,6 +1,7 @@
 package fr.stockshop.stock_api.shoppinglist;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.hamcrest.Matchers.containsString;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.delete;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.patch;
@@ -713,6 +714,136 @@ class ShoppingListIntegrationTest {
         .andExpect(status().isUnauthorized());
   }
 
+  @Test
+  void finishShoppingListProcessesCheckedItemsAndUpdatesStockWithUnitConversion() throws Exception {
+    String email = "shopping-finish-" + UUID.randomUUID() + "@test.fr";
+    String token = registerActivateAndLogin(email);
+    User user = userRepository.findByEmail(email).orElseThrow();
+
+    UUID weightTypeId = weightTypeId();
+    UUID kgUnitId = kgUnitId(weightTypeId);
+    UUID gUnitId = gramUnitId(weightTypeId);
+    UUID categoryId = saveCategory(user, "Epicerie", "#333333");
+
+    UUID riceProductId =
+        insertProduct(user.getId(), categoryId, "Riz", weightTypeId, kgUnitId, true);
+    UUID pastaProductId =
+        insertProduct(user.getId(), categoryId, "Pates", weightTypeId, kgUnitId, true);
+    UUID appleProductId =
+        insertProduct(user.getId(), categoryId, "Pomme", weightTypeId, kgUnitId, true);
+
+    UUID riceStockId =
+        insertStockItem(user.getId(), riceProductId, new BigDecimal("1.000"), null, null);
+
+    UUID checkedRiceItemId =
+        insertShoppingListItem(
+            user.getId(), riceProductId, true, new BigDecimal("500"), gUnitId, false);
+    UUID checkedPastaItemId =
+        insertShoppingListItem(
+            user.getId(), pastaProductId, true, new BigDecimal("2.000"), kgUnitId, false);
+    UUID uncheckedAppleItemId =
+        insertShoppingListItem(user.getId(), appleProductId, false, null, null, false);
+
+    mockMvc
+        .perform(post("/api/shopping-list/finish").header("Authorization", "Bearer " + token))
+        .andExpect(status().isOk())
+        .andExpect(jsonPath("$.processedCount").value(2))
+        .andExpect(jsonPath("$.results.length()").value(2));
+
+    BigDecimal riceQuantity =
+        jdbcTemplate.queryForObject(
+            "select quantity from stock_items where id = ?", BigDecimal.class, riceStockId);
+    assertThat(riceQuantity).isEqualByComparingTo("1.500");
+
+    BigDecimal pastaQuantity =
+        jdbcTemplate.queryForObject(
+            "select quantity from stock_items where user_id = ? and product_id = ?",
+            BigDecimal.class,
+            user.getId(),
+            pastaProductId);
+    assertThat(pastaQuantity).isEqualByComparingTo("2.000");
+
+    Integer checkedRiceStillExists =
+        jdbcTemplate.queryForObject(
+            "select count(*) from shopping_list_items where id = ?",
+            Integer.class,
+            checkedRiceItemId);
+    Integer checkedPastaStillExists =
+        jdbcTemplate.queryForObject(
+            "select count(*) from shopping_list_items where id = ?",
+            Integer.class,
+            checkedPastaItemId);
+    Integer uncheckedAppleStillExists =
+        jdbcTemplate.queryForObject(
+            "select count(*) from shopping_list_items where id = ?",
+            Integer.class,
+            uncheckedAppleItemId);
+    assertThat(checkedRiceStillExists).isZero();
+    assertThat(checkedPastaStillExists).isZero();
+    assertThat(uncheckedAppleStillExists).isEqualTo(1);
+  }
+
+  @Test
+  void finishShoppingListReturnsBadRequestWhenCheckedItemsAreIncompleteAndRollsBack()
+      throws Exception {
+    String email = "shopping-finish-incomplete-" + UUID.randomUUID() + "@test.fr";
+    String token = registerActivateAndLogin(email);
+    User user = userRepository.findByEmail(email).orElseThrow();
+
+    UUID weightTypeId = weightTypeId();
+    UUID kgUnitId = kgUnitId(weightTypeId);
+    UUID categoryId = saveCategory(user, "Epicerie", "#333333");
+
+    UUID riceProductId =
+        insertProduct(user.getId(), categoryId, "Riz", weightTypeId, kgUnitId, true);
+    UUID stockId =
+        insertStockItem(user.getId(), riceProductId, new BigDecimal("1.000"), null, null);
+
+    UUID incompleteCheckedItemId =
+        insertShoppingListItem(user.getId(), riceProductId, true, null, kgUnitId, false);
+
+    mockMvc
+        .perform(post("/api/shopping-list/finish").header("Authorization", "Bearer " + token))
+        .andExpect(status().isBadRequest())
+        .andExpect(jsonPath("$.message", containsString(incompleteCheckedItemId.toString())));
+
+    BigDecimal stockQuantity =
+        jdbcTemplate.queryForObject(
+            "select quantity from stock_items where id = ?", BigDecimal.class, stockId);
+    assertThat(stockQuantity).isEqualByComparingTo("1.000");
+
+    Integer checkedStillExists =
+        jdbcTemplate.queryForObject(
+            "select count(*) from shopping_list_items where id = ?",
+            Integer.class,
+            incompleteCheckedItemId);
+    assertThat(checkedStillExists).isEqualTo(1);
+  }
+
+  @Test
+  void finishShoppingListReturnsZeroWhenNoCheckedItems() throws Exception {
+    String email = "shopping-finish-empty-" + UUID.randomUUID() + "@test.fr";
+    String token = registerActivateAndLogin(email);
+    User user = userRepository.findByEmail(email).orElseThrow();
+
+    UUID weightTypeId = weightTypeId();
+    UUID kgUnitId = kgUnitId(weightTypeId);
+    UUID categoryId = saveCategory(user, "Epicerie", "#333333");
+    UUID productId = insertProduct(user.getId(), categoryId, "Pomme", weightTypeId, kgUnitId, true);
+    insertShoppingListItem(user.getId(), productId, false, null, null, false);
+
+    mockMvc
+        .perform(post("/api/shopping-list/finish").header("Authorization", "Bearer " + token))
+        .andExpect(status().isOk())
+        .andExpect(jsonPath("$.processedCount").value(0))
+        .andExpect(jsonPath("$.results.length()").value(0));
+  }
+
+  @Test
+  void finishShoppingListRequiresAuthentication() throws Exception {
+    mockMvc.perform(post("/api/shopping-list/finish")).andExpect(status().isUnauthorized());
+  }
+
   private UUID weightTypeId() {
     return jdbcTemplate.queryForObject(
         "select id from quantity_types where code = ?", UUID.class, "weight");
@@ -728,6 +859,14 @@ class ShoppingListIntegrationTest {
         "select id from quantity_units where code = ? and quantity_type_id = ?",
         UUID.class,
         "kg",
+        typeId);
+  }
+
+  private UUID gramUnitId(UUID typeId) {
+    return jdbcTemplate.queryForObject(
+        "select id from quantity_units where code = ? and quantity_type_id = ?",
+        UUID.class,
+        "g",
         typeId);
   }
 

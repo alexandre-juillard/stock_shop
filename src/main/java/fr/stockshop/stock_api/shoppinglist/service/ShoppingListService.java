@@ -3,6 +3,7 @@ package fr.stockshop.stock_api.shoppinglist.service;
 import fr.stockshop.stock_api.exception.ProductNotFoundException;
 import fr.stockshop.stock_api.exception.QuantityUnitNotFoundException;
 import fr.stockshop.stock_api.exception.ShoppingListCheckedUnitMismatchException;
+import fr.stockshop.stock_api.exception.ShoppingListFinishIncompleteItemsException;
 import fr.stockshop.stock_api.exception.ShoppingListItemAlreadyExistsException;
 import fr.stockshop.stock_api.exception.ShoppingListItemNotFoundException;
 import fr.stockshop.stock_api.product.entity.Product;
@@ -13,15 +14,22 @@ import fr.stockshop.stock_api.shoppinglist.dto.AddShoppingListItemRequest;
 import fr.stockshop.stock_api.shoppinglist.dto.CheckShoppingListItemRequest;
 import fr.stockshop.stock_api.shoppinglist.dto.CheckThresholdAddedProductResponse;
 import fr.stockshop.stock_api.shoppinglist.dto.CheckThresholdsResponse;
+import fr.stockshop.stock_api.shoppinglist.dto.FinishShoppingListItemResultResponse;
+import fr.stockshop.stock_api.shoppinglist.dto.FinishShoppingListResponse;
 import fr.stockshop.stock_api.shoppinglist.dto.ShoppingListCategoryGroupResponse;
 import fr.stockshop.stock_api.shoppinglist.dto.ShoppingListCategorySummaryResponse;
 import fr.stockshop.stock_api.shoppinglist.dto.ShoppingListItemResponse;
 import fr.stockshop.stock_api.shoppinglist.entity.ShoppingListItem;
 import fr.stockshop.stock_api.shoppinglist.mapper.ShoppingListMapper;
 import fr.stockshop.stock_api.shoppinglist.repository.ShoppingListItemRepository;
+import fr.stockshop.stock_api.stock.entity.StockItem;
+import fr.stockshop.stock_api.stock.repository.StockItemRepository;
 import fr.stockshop.stock_api.user.entity.User;
+import java.math.BigDecimal;
+import java.math.RoundingMode;
 import java.time.Instant;
 import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -39,6 +47,7 @@ public class ShoppingListService {
   private final ShoppingListItemRepository shoppingListItemRepository;
   private final ProductRepository productRepository;
   private final QuantityUnitRepository quantityUnitRepository;
+  private final StockItemRepository stockItemRepository;
   private final ShoppingListMapper shoppingListMapper;
 
   @Transactional(readOnly = true)
@@ -143,6 +152,82 @@ public class ShoppingListService {
     shoppingListItem.setCheckedAt(null);
 
     return shoppingListMapper.toItemResponse(shoppingListItemRepository.save(shoppingListItem));
+  }
+
+  @Transactional
+  public FinishShoppingListResponse finishShoppingList(User currentUser) {
+    List<ShoppingListItem> checkedItems =
+        shoppingListItemRepository.findCheckedByUserOrderByAddedAtAsc(currentUser);
+    if (checkedItems.isEmpty()) {
+      return new FinishShoppingListResponse(0, List.of());
+    }
+
+    List<ShoppingListItem> incompleteItems =
+        checkedItems.stream()
+            .filter(item -> item.getCheckedQuantity() == null || item.getCheckedUnit() == null)
+            .toList();
+    if (!incompleteItems.isEmpty()) {
+      String itemList =
+          incompleteItems.stream()
+              .map(item -> item.getProduct().getName() + "(" + item.getId() + ")")
+              .toList()
+              .toString();
+      throw new ShoppingListFinishIncompleteItemsException(itemList);
+    }
+
+    List<UUID> productIds = checkedItems.stream().map(item -> item.getProduct().getId()).toList();
+    Map<UUID, StockItem> stockByProductId = new HashMap<>();
+    stockItemRepository
+        .findByUserAndProduct_IdIn(currentUser, productIds)
+        .forEach(stockItem -> stockByProductId.put(stockItem.getProduct().getId(), stockItem));
+
+    List<FinishShoppingListItemResultResponse> results = new ArrayList<>();
+    for (ShoppingListItem checkedItem : checkedItems) {
+      Product product = checkedItem.getProduct();
+      BigDecimal addedQuantityInBaseUnit = toBaseUnitQuantity(checkedItem);
+
+      StockItem stockItem = stockByProductId.get(product.getId());
+      String action;
+      if (stockItem == null) {
+        stockItem =
+            stockItemRepository.save(
+                StockItem.builder()
+                    .user(currentUser)
+                    .product(product)
+                    .quantity(addedQuantityInBaseUnit)
+                    .build());
+        stockByProductId.put(product.getId(), stockItem);
+        action = "created";
+      } else {
+        stockItem.setQuantity(stockItem.getQuantity().add(addedQuantityInBaseUnit));
+        action = "updated";
+      }
+
+      results.add(
+          new FinishShoppingListItemResultResponse(
+              checkedItem.getId(),
+              product.getId(),
+              product.getName(),
+              stockItem.getId(),
+              action,
+              addedQuantityInBaseUnit,
+              stockItem.getQuantity()));
+    }
+
+    shoppingListItemRepository.deleteAllInBatch(checkedItems);
+    return new FinishShoppingListResponse(results.size(), results);
+  }
+
+  private BigDecimal toBaseUnitQuantity(ShoppingListItem checkedItem) {
+    QuantityUnit checkedUnit = checkedItem.getCheckedUnit();
+    QuantityUnit baseUnit = checkedItem.getProduct().getBaseUnit();
+    if (!checkedUnit.getQuantityType().getId().equals(baseUnit.getQuantityType().getId())) {
+      throw new ShoppingListCheckedUnitMismatchException(checkedItem.getId(), checkedUnit.getId());
+    }
+
+    BigDecimal checkedInReference =
+        checkedItem.getCheckedQuantity().multiply(checkedUnit.getConversionFactor());
+    return checkedInReference.divide(baseUnit.getConversionFactor(), 3, RoundingMode.HALF_UP);
   }
 
   private ShoppingListItem saveNewItem(
