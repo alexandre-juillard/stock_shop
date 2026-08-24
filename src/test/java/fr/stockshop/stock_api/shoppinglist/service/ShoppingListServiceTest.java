@@ -1,12 +1,21 @@
 package fr.stockshop.stock_api.shoppinglist.service;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 import fr.stockshop.stock_api.category.entity.Category;
+import fr.stockshop.stock_api.exception.ProductNotFoundException;
+import fr.stockshop.stock_api.exception.ShoppingListItemAlreadyExistsException;
+import fr.stockshop.stock_api.exception.ShoppingListItemNotFoundException;
 import fr.stockshop.stock_api.product.entity.Product;
+import fr.stockshop.stock_api.product.repository.ProductRepository;
+import fr.stockshop.stock_api.shoppinglist.dto.AddShoppingListItemRequest;
 import fr.stockshop.stock_api.shoppinglist.dto.ShoppingListCategoryGroupResponse;
 import fr.stockshop.stock_api.shoppinglist.dto.ShoppingListCategorySummaryResponse;
 import fr.stockshop.stock_api.shoppinglist.dto.ShoppingListItemResponse;
@@ -17,17 +26,22 @@ import fr.stockshop.stock_api.shoppinglist.repository.ShoppingListItemRepository
 import fr.stockshop.stock_api.user.entity.User;
 import java.time.Instant;
 import java.util.List;
+import java.util.Optional;
 import java.util.UUID;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
+import org.mockito.ArgumentCaptor;
 import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
+import org.springframework.dao.DataIntegrityViolationException;
+import org.springframework.security.access.AccessDeniedException;
 
 @ExtendWith(MockitoExtension.class)
 class ShoppingListServiceTest {
 
   @Mock private ShoppingListItemRepository shoppingListItemRepository;
+  @Mock private ProductRepository productRepository;
   @Mock private ShoppingListMapper shoppingListMapper;
 
   @InjectMocks private ShoppingListService shoppingListService;
@@ -118,6 +132,157 @@ class ShoppingListServiceTest {
     shoppingListService.listShoppingList(currentUser);
 
     verify(shoppingListItemRepository).findVisibleByUserOrderByCategoryAndProductName(currentUser);
+  }
+
+  @Test
+  void addItemCreatesUncheckedManualItemAndReturnsMappedResponse() {
+    User currentUser = User.builder().id(UUID.randomUUID()).build();
+    UUID productId = UUID.randomUUID();
+    Product product =
+        Product.builder()
+            .id(productId)
+            .name("Pomme")
+            .category(category("Fruits", "#00AA00"))
+            .build();
+    AddShoppingListItemRequest request = new AddShoppingListItemRequest(productId);
+
+    ShoppingListItem saved =
+        ShoppingListItem.builder()
+            .id(UUID.randomUUID())
+            .user(currentUser)
+            .product(product)
+            .checked(false)
+            .addedAutomatically(false)
+            .addedAt(Instant.parse("2026-08-24T10:00:00Z"))
+            .build();
+    ShoppingListItemResponse expected =
+        new ShoppingListItemResponse(
+            saved.getId(),
+            new ShoppingListProductSummaryResponse(productId, "Pomme"),
+            false,
+            null,
+            null,
+            false,
+            saved.getAddedAt());
+
+    when(productRepository.findByIdAndUserAndVisibleTrue(productId, currentUser))
+        .thenReturn(Optional.of(product));
+    when(shoppingListItemRepository.existsByUserAndProduct(currentUser, product)).thenReturn(false);
+    when(shoppingListItemRepository.saveAndFlush(any(ShoppingListItem.class))).thenReturn(saved);
+    when(shoppingListMapper.toItemResponse(saved)).thenReturn(expected);
+
+    ShoppingListItemResponse result = shoppingListService.addItem(currentUser, request);
+
+    assertThat(result).isEqualTo(expected);
+
+    ArgumentCaptor<ShoppingListItem> captor = ArgumentCaptor.forClass(ShoppingListItem.class);
+    verify(shoppingListItemRepository).saveAndFlush(captor.capture());
+    assertThat(captor.getValue().isChecked()).isFalse();
+    assertThat(captor.getValue().isAddedAutomatically()).isFalse();
+    assertThat(captor.getValue().getUser()).isEqualTo(currentUser);
+    assertThat(captor.getValue().getProduct()).isEqualTo(product);
+  }
+
+  @Test
+  void addItemThrowsNotFoundWhenProductMissingOrInvisible() {
+    User currentUser = User.builder().id(UUID.randomUUID()).build();
+    UUID productId = UUID.randomUUID();
+    AddShoppingListItemRequest request = new AddShoppingListItemRequest(productId);
+
+    when(productRepository.findByIdAndUserAndVisibleTrue(productId, currentUser))
+        .thenReturn(Optional.empty());
+
+    assertThatThrownBy(() -> shoppingListService.addItem(currentUser, request))
+        .isInstanceOf(ProductNotFoundException.class);
+    verify(shoppingListItemRepository, never()).saveAndFlush(any(ShoppingListItem.class));
+  }
+
+  @Test
+  void addItemThrowsConflictWhenItemAlreadyExists() {
+    User currentUser = User.builder().id(UUID.randomUUID()).build();
+    UUID productId = UUID.randomUUID();
+    Product product = Product.builder().id(productId).name("Pomme").build();
+    AddShoppingListItemRequest request = new AddShoppingListItemRequest(productId);
+
+    when(productRepository.findByIdAndUserAndVisibleTrue(productId, currentUser))
+        .thenReturn(Optional.of(product));
+    when(shoppingListItemRepository.existsByUserAndProduct(currentUser, product)).thenReturn(true);
+
+    assertThatThrownBy(() -> shoppingListService.addItem(currentUser, request))
+        .isInstanceOf(ShoppingListItemAlreadyExistsException.class);
+    verify(shoppingListItemRepository, never()).saveAndFlush(any(ShoppingListItem.class));
+  }
+
+  @Test
+  void addItemThrowsConflictWhenUniqueConstraintIsViolatedConcurrently() {
+    User currentUser = User.builder().id(UUID.randomUUID()).build();
+    UUID productId = UUID.randomUUID();
+    Product product = Product.builder().id(productId).name("Pomme").build();
+    AddShoppingListItemRequest request = new AddShoppingListItemRequest(productId);
+
+    when(productRepository.findByIdAndUserAndVisibleTrue(productId, currentUser))
+        .thenReturn(Optional.of(product));
+    when(shoppingListItemRepository.existsByUserAndProduct(currentUser, product)).thenReturn(false);
+    when(shoppingListItemRepository.saveAndFlush(any(ShoppingListItem.class)))
+        .thenThrow(new DataIntegrityViolationException("duplicate"));
+
+    assertThatThrownBy(() -> shoppingListService.addItem(currentUser, request))
+        .isInstanceOf(ShoppingListItemAlreadyExistsException.class);
+  }
+
+  @Test
+  void deleteItemRemovesItemWhenOwnedByCurrentUser() {
+    User currentUser = User.builder().id(UUID.randomUUID()).build();
+    ShoppingListItem item =
+        ShoppingListItem.builder()
+            .id(UUID.randomUUID())
+            .user(currentUser)
+            .product(Product.builder().build())
+            .build();
+
+    when(shoppingListItemRepository.findById(item.getId())).thenReturn(Optional.of(item));
+
+    shoppingListService.deleteItem(currentUser, item.getId());
+
+    verify(shoppingListItemRepository).delete(item);
+  }
+
+  @Test
+  void deleteItemThrowsNotFoundWhenMissing() {
+    User currentUser = User.builder().id(UUID.randomUUID()).build();
+    UUID itemId = UUID.randomUUID();
+    when(shoppingListItemRepository.findById(itemId)).thenReturn(Optional.empty());
+
+    assertThatThrownBy(() -> shoppingListService.deleteItem(currentUser, itemId))
+        .isInstanceOf(ShoppingListItemNotFoundException.class);
+    verify(shoppingListItemRepository, never()).delete(any(ShoppingListItem.class));
+  }
+
+  @Test
+  void deleteItemThrowsForbiddenWhenOwnedByAnotherUser() {
+    User owner = User.builder().id(UUID.randomUUID()).build();
+    User currentUser = User.builder().id(UUID.randomUUID()).build();
+    ShoppingListItem item =
+        ShoppingListItem.builder()
+            .id(UUID.randomUUID())
+            .user(owner)
+            .product(Product.builder().build())
+            .build();
+
+    when(shoppingListItemRepository.findById(item.getId())).thenReturn(Optional.of(item));
+
+    assertThatThrownBy(() -> shoppingListService.deleteItem(currentUser, item.getId()))
+        .isInstanceOf(AccessDeniedException.class);
+    verify(shoppingListItemRepository, never()).delete(any(ShoppingListItem.class));
+  }
+
+  @Test
+  void clearListDeletesAllItemsForCurrentUser() {
+    User currentUser = User.builder().id(UUID.randomUUID()).build();
+
+    shoppingListService.clearList(currentUser);
+
+    verify(shoppingListItemRepository).deleteAllByUser(eq(currentUser));
   }
 
   private Category category(String name, String color) {
