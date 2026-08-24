@@ -1,6 +1,7 @@
 package fr.stockshop.stock_api.shoppinglist;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.delete;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
@@ -179,6 +180,217 @@ class ShoppingListIntegrationTest {
     mockMvc.perform(get("/api/shopping-list")).andExpect(status().isUnauthorized());
   }
 
+  @Test
+  void addShoppingListItemCreatesManualUncheckedItemAndReturns201() throws Exception {
+    String email = "shopping-add-" + UUID.randomUUID() + "@test.fr";
+    String token = registerActivateAndLogin(email);
+    User user = userRepository.findByEmail(email).orElseThrow();
+
+    UUID typeId = weightTypeId();
+    UUID unitId = kgUnitId(typeId);
+    UUID categoryId = saveCategory(user, "Fruits", "#11AA11");
+    UUID productId = insertProduct(user.getId(), categoryId, "Pomme", typeId, unitId, true);
+
+    mockMvc
+        .perform(
+            post("/api/shopping-list/items")
+                .header("Authorization", "Bearer " + token)
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(objectMapper.writeValueAsString(Map.of("productId", productId))))
+        .andExpect(status().isCreated())
+        .andExpect(jsonPath("$.product.id").value(productId.toString()))
+        .andExpect(jsonPath("$.product.name").value("Pomme"))
+        .andExpect(jsonPath("$.isChecked").value(false))
+        .andExpect(jsonPath("$.checkedQuantity").doesNotExist())
+        .andExpect(jsonPath("$.checkedUnit").doesNotExist())
+        .andExpect(jsonPath("$.addedAutomatically").value(false))
+        .andExpect(jsonPath("$.addedAt").isNotEmpty());
+
+    Integer count =
+        jdbcTemplate.queryForObject(
+            "select count(*) from shopping_list_items where user_id = ? and product_id = ? "
+                + "and is_checked = false and added_automatically = false",
+            Integer.class,
+            user.getId(),
+            productId);
+    assertThat(count).isEqualTo(1);
+  }
+
+  @Test
+  void addShoppingListItemReturnsConflictWhenProductAlreadyInList() throws Exception {
+    String email = "shopping-add-dup-" + UUID.randomUUID() + "@test.fr";
+    String token = registerActivateAndLogin(email);
+    User user = userRepository.findByEmail(email).orElseThrow();
+
+    UUID typeId = weightTypeId();
+    UUID unitId = kgUnitId(typeId);
+    UUID categoryId = saveCategory(user, "Fruits", "#11AA11");
+    UUID productId = insertProduct(user.getId(), categoryId, "Banane", typeId, unitId, true);
+    insertShoppingListItem(user.getId(), productId, false, null, null, false);
+
+    mockMvc
+        .perform(
+            post("/api/shopping-list/items")
+                .header("Authorization", "Bearer " + token)
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(objectMapper.writeValueAsString(Map.of("productId", productId))))
+        .andExpect(status().isConflict());
+  }
+
+  @Test
+  void addShoppingListItemReturnsNotFoundForInvisibleProduct() throws Exception {
+    String email = "shopping-add-hidden-" + UUID.randomUUID() + "@test.fr";
+    String token = registerActivateAndLogin(email);
+    User user = userRepository.findByEmail(email).orElseThrow();
+
+    UUID typeId = weightTypeId();
+    UUID unitId = kgUnitId(typeId);
+    UUID categoryId = saveCategory(user, "Fruits", "#11AA11");
+    UUID hiddenProductId =
+        insertProduct(user.getId(), categoryId, "ProduitCache", typeId, unitId, false);
+
+    mockMvc
+        .perform(
+            post("/api/shopping-list/items")
+                .header("Authorization", "Bearer " + token)
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(objectMapper.writeValueAsString(Map.of("productId", hiddenProductId))))
+        .andExpect(status().isNotFound());
+  }
+
+  @Test
+  void addShoppingListItemRequiresAuthentication() throws Exception {
+    mockMvc
+        .perform(
+            post("/api/shopping-list/items")
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(objectMapper.writeValueAsString(Map.of("productId", UUID.randomUUID()))))
+        .andExpect(status().isUnauthorized());
+  }
+
+  @Test
+  void deleteShoppingListItemDeletesOwnedItem() throws Exception {
+    String email = "shopping-delete-item-" + UUID.randomUUID() + "@test.fr";
+    String token = registerActivateAndLogin(email);
+    User user = userRepository.findByEmail(email).orElseThrow();
+
+    UUID typeId = weightTypeId();
+    UUID unitId = kgUnitId(typeId);
+    UUID categoryId = saveCategory(user, "Legumes", "#AA5500");
+    UUID productId = insertProduct(user.getId(), categoryId, "Carotte", typeId, unitId, true);
+    UUID shoppingListItemId =
+        insertShoppingListItem(user.getId(), productId, false, null, null, false);
+
+    mockMvc
+        .perform(
+            delete("/api/shopping-list/items/{id}", shoppingListItemId)
+                .header("Authorization", "Bearer " + token))
+        .andExpect(status().isNoContent());
+
+    Integer count =
+        jdbcTemplate.queryForObject(
+            "select count(*) from shopping_list_items where id = ?",
+            Integer.class,
+            shoppingListItemId);
+    assertThat(count).isZero();
+  }
+
+  @Test
+  void deleteShoppingListItemReturnsNotFoundWhenUnknown() throws Exception {
+    String email = "shopping-delete-item-404-" + UUID.randomUUID() + "@test.fr";
+    String token = registerActivateAndLogin(email);
+
+    mockMvc
+        .perform(
+            delete("/api/shopping-list/items/{id}", UUID.randomUUID())
+                .header("Authorization", "Bearer " + token))
+        .andExpect(status().isNotFound());
+  }
+
+  @Test
+  void deleteShoppingListItemReturnsForbiddenWhenOwnedByAnotherUser() throws Exception {
+    String ownerEmail = "shopping-delete-owner-" + UUID.randomUUID() + "@test.fr";
+    String ownerToken = registerActivateAndLogin(ownerEmail);
+    User owner = userRepository.findByEmail(ownerEmail).orElseThrow();
+
+    String requesterEmail = "shopping-delete-requester-" + UUID.randomUUID() + "@test.fr";
+    String requesterToken = registerActivateAndLogin(requesterEmail);
+
+    UUID typeId = weightTypeId();
+    UUID unitId = kgUnitId(typeId);
+    UUID categoryId = saveCategory(owner, "OwnerCat", "#444444");
+    UUID productId = insertProduct(owner.getId(), categoryId, "ProduitOwner", typeId, unitId, true);
+    UUID shoppingListItemId =
+        insertShoppingListItem(owner.getId(), productId, false, null, null, false);
+
+    mockMvc
+        .perform(
+            delete("/api/shopping-list/items/{id}", shoppingListItemId)
+                .header("Authorization", "Bearer " + requesterToken))
+        .andExpect(status().isForbidden());
+
+    Integer count =
+        jdbcTemplate.queryForObject(
+            "select count(*) from shopping_list_items where id = ?",
+            Integer.class,
+            shoppingListItemId);
+    assertThat(count).isEqualTo(1);
+
+    // Utilisé uniquement pour garantir que le token owner est bien valide pour ce scénario.
+    mockMvc
+        .perform(get("/api/shopping-list").header("Authorization", "Bearer " + ownerToken))
+        .andExpect(status().isOk());
+  }
+
+  @Test
+  void clearShoppingListDeletesOnlyCurrentUserItems() throws Exception {
+    String ownerEmail = "shopping-clear-owner-" + UUID.randomUUID() + "@test.fr";
+    String ownerToken = registerActivateAndLogin(ownerEmail);
+    User owner = userRepository.findByEmail(ownerEmail).orElseThrow();
+
+    String otherEmail = "shopping-clear-other-" + UUID.randomUUID() + "@test.fr";
+    registerActivateAndLogin(otherEmail);
+    User other = userRepository.findByEmail(otherEmail).orElseThrow();
+
+    UUID typeId = weightTypeId();
+    UUID unitId = kgUnitId(typeId);
+    UUID ownerCategoryId = saveCategory(owner, "Fruits", "#11AA11");
+    UUID otherCategoryId = saveCategory(other, "Legumes", "#AA5500");
+
+    UUID ownerProductId1 =
+        insertProduct(owner.getId(), ownerCategoryId, "Pomme", typeId, unitId, true);
+    UUID ownerProductId2 =
+        insertProduct(owner.getId(), ownerCategoryId, "Banane", typeId, unitId, true);
+    UUID otherProductId =
+        insertProduct(other.getId(), otherCategoryId, "Carotte", typeId, unitId, true);
+
+    insertShoppingListItem(owner.getId(), ownerProductId1, false, null, null, false);
+    insertShoppingListItem(owner.getId(), ownerProductId2, false, null, null, false);
+    insertShoppingListItem(other.getId(), otherProductId, false, null, null, false);
+
+    mockMvc
+        .perform(delete("/api/shopping-list").header("Authorization", "Bearer " + ownerToken))
+        .andExpect(status().isNoContent());
+
+    Integer ownerCount =
+        jdbcTemplate.queryForObject(
+            "select count(*) from shopping_list_items where user_id = ?",
+            Integer.class,
+            owner.getId());
+    Integer otherCount =
+        jdbcTemplate.queryForObject(
+            "select count(*) from shopping_list_items where user_id = ?",
+            Integer.class,
+            other.getId());
+    assertThat(ownerCount).isZero();
+    assertThat(otherCount).isEqualTo(1);
+  }
+
+  @Test
+  void clearShoppingListRequiresAuthentication() throws Exception {
+    mockMvc.perform(delete("/api/shopping-list")).andExpect(status().isUnauthorized());
+  }
+
   private UUID weightTypeId() {
     return jdbcTemplate.queryForObject(
         "select id from quantity_types where code = ?", UUID.class, "weight");
@@ -219,23 +431,25 @@ class ShoppingListIntegrationTest {
     return productId;
   }
 
-  private void insertShoppingListItem(
+  private UUID insertShoppingListItem(
       UUID userId,
       UUID productId,
       boolean isChecked,
       BigDecimal checkedQuantity,
       UUID checkedUnitId,
       boolean addedAutomatically) {
+    UUID shoppingListItemId = UUID.randomUUID();
     jdbcTemplate.update(
         "insert into shopping_list_items (id, user_id, product_id, is_checked, checked_quantity, checked_unit_id, added_automatically, added_at)"
             + " values (?, ?, ?, ?, ?, ?, ?, now())",
-        UUID.randomUUID(),
+        shoppingListItemId,
         userId,
         productId,
         isChecked,
         checkedQuantity,
         checkedUnitId,
         addedAutomatically);
+    return shoppingListItemId;
   }
 
   private String registerActivateAndLogin(String email) throws Exception {
