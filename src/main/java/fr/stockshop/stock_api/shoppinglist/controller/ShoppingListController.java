@@ -1,6 +1,7 @@
 package fr.stockshop.stock_api.shoppinglist.controller;
 
 import fr.stockshop.stock_api.shoppinglist.dto.AddShoppingListItemRequest;
+import fr.stockshop.stock_api.shoppinglist.dto.CheckShoppingListItemRequest;
 import fr.stockshop.stock_api.shoppinglist.dto.CheckThresholdsResponse;
 import fr.stockshop.stock_api.shoppinglist.dto.ShoppingListCategoryGroupResponse;
 import fr.stockshop.stock_api.shoppinglist.dto.ShoppingListItemResponse;
@@ -17,6 +18,7 @@ import org.springframework.http.ResponseEntity;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.PatchMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
@@ -67,5 +69,21 @@ public class ShoppingListController {
   public ResponseEntity<CheckThresholdsResponse> checkThresholds(
       @AuthenticationPrincipal User currentUser) {
     return ResponseEntity.ok(shoppingListService.checkThresholds(currentUser));
+  }
+
+  @PatchMapping("/items/{id}/check")
+  @Operation(summary = "Cocher un article avec la quantite achetee")
+  public ResponseEntity<ShoppingListItemResponse> checkShoppingListItem(
+      @AuthenticationPrincipal User currentUser,
+      @PathVariable UUID id,
+      @Valid @RequestBody CheckShoppingListItemRequest request) {
+    return ResponseEntity.ok(shoppingListService.checkItem(currentUser, id, request));
+  }
+
+  @PatchMapping("/items/{id}/uncheck")
+  @Operation(summary = "Decocher un article de la liste")
+  public ResponseEntity<ShoppingListItemResponse> uncheckShoppingListItem(
+      @AuthenticationPrincipal User currentUser, @PathVariable UUID id) {
+    return ResponseEntity.ok(shoppingListService.uncheckItem(currentUser, id));
   }
 }

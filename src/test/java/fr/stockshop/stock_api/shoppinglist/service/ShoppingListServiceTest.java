@@ -11,20 +11,28 @@ import static org.mockito.Mockito.when;
 
 import fr.stockshop.stock_api.category.entity.Category;
 import fr.stockshop.stock_api.exception.ProductNotFoundException;
+import fr.stockshop.stock_api.exception.QuantityUnitNotFoundException;
+import fr.stockshop.stock_api.exception.ShoppingListCheckedUnitMismatchException;
 import fr.stockshop.stock_api.exception.ShoppingListItemAlreadyExistsException;
 import fr.stockshop.stock_api.exception.ShoppingListItemNotFoundException;
 import fr.stockshop.stock_api.product.entity.Product;
 import fr.stockshop.stock_api.product.repository.ProductRepository;
+import fr.stockshop.stock_api.quantity.entity.QuantityType;
+import fr.stockshop.stock_api.quantity.entity.QuantityUnit;
+import fr.stockshop.stock_api.quantity.repository.QuantityUnitRepository;
 import fr.stockshop.stock_api.shoppinglist.dto.AddShoppingListItemRequest;
+import fr.stockshop.stock_api.shoppinglist.dto.CheckShoppingListItemRequest;
 import fr.stockshop.stock_api.shoppinglist.dto.CheckThresholdsResponse;
 import fr.stockshop.stock_api.shoppinglist.dto.ShoppingListCategoryGroupResponse;
 import fr.stockshop.stock_api.shoppinglist.dto.ShoppingListCategorySummaryResponse;
+import fr.stockshop.stock_api.shoppinglist.dto.ShoppingListCheckedUnitResponse;
 import fr.stockshop.stock_api.shoppinglist.dto.ShoppingListItemResponse;
 import fr.stockshop.stock_api.shoppinglist.dto.ShoppingListProductSummaryResponse;
 import fr.stockshop.stock_api.shoppinglist.entity.ShoppingListItem;
 import fr.stockshop.stock_api.shoppinglist.mapper.ShoppingListMapper;
 import fr.stockshop.stock_api.shoppinglist.repository.ShoppingListItemRepository;
 import fr.stockshop.stock_api.user.entity.User;
+import java.math.BigDecimal;
 import java.time.Instant;
 import java.util.List;
 import java.util.Optional;
@@ -43,6 +51,7 @@ class ShoppingListServiceTest {
 
   @Mock private ShoppingListItemRepository shoppingListItemRepository;
   @Mock private ProductRepository productRepository;
+  @Mock private QuantityUnitRepository quantityUnitRepository;
   @Mock private ShoppingListMapper shoppingListMapper;
 
   @InjectMocks private ShoppingListService shoppingListService;
@@ -284,6 +293,217 @@ class ShoppingListServiceTest {
     shoppingListService.clearList(currentUser);
 
     verify(shoppingListItemRepository).deleteAllByUser(eq(currentUser));
+  }
+
+  @Test
+  void checkItemMarksItemAsCheckedAndReturnsMappedResponse() {
+    User currentUser = User.builder().id(UUID.randomUUID()).build();
+    UUID itemId = UUID.randomUUID();
+    UUID checkedUnitId = UUID.randomUUID();
+    QuantityType weightType = QuantityType.builder().id(UUID.randomUUID()).code("weight").build();
+    Product product =
+        Product.builder().id(UUID.randomUUID()).name("Pomme").quantityType(weightType).build();
+    ShoppingListItem item =
+        ShoppingListItem.builder()
+            .id(itemId)
+            .user(currentUser)
+            .product(product)
+            .checked(false)
+            .build();
+    QuantityUnit checkedUnit =
+        QuantityUnit.builder()
+            .id(checkedUnitId)
+            .quantityType(weightType)
+            .code("kg")
+            .label("Kilogramme")
+            .build();
+    CheckShoppingListItemRequest request =
+        new CheckShoppingListItemRequest(new BigDecimal("1.250"), checkedUnitId);
+
+    ShoppingListItemResponse expected =
+        new ShoppingListItemResponse(
+            itemId,
+            new ShoppingListProductSummaryResponse(product.getId(), "Pomme"),
+            true,
+            new BigDecimal("1.250"),
+            new ShoppingListCheckedUnitResponse(checkedUnitId, "kg", "Kilogramme"),
+            false,
+            Instant.parse("2026-08-24T10:00:00Z"));
+
+    when(shoppingListItemRepository.findById(itemId)).thenReturn(Optional.of(item));
+    when(quantityUnitRepository.findById(checkedUnitId)).thenReturn(Optional.of(checkedUnit));
+    when(shoppingListItemRepository.save(any(ShoppingListItem.class)))
+        .thenAnswer(invocation -> invocation.getArgument(0));
+    when(shoppingListMapper.toItemResponse(any(ShoppingListItem.class))).thenReturn(expected);
+
+    ShoppingListItemResponse result = shoppingListService.checkItem(currentUser, itemId, request);
+
+    assertThat(result).isEqualTo(expected);
+    ArgumentCaptor<ShoppingListItem> captor = ArgumentCaptor.forClass(ShoppingListItem.class);
+    verify(shoppingListItemRepository).save(captor.capture());
+    ShoppingListItem saved = captor.getValue();
+    assertThat(saved.isChecked()).isTrue();
+    assertThat(saved.getCheckedQuantity()).isEqualByComparingTo("1.250");
+    assertThat(saved.getCheckedUnit()).isEqualTo(checkedUnit);
+    assertThat(saved.getCheckedAt()).isNotNull();
+  }
+
+  @Test
+  void checkItemThrowsNotFoundWhenItemMissing() {
+    User currentUser = User.builder().id(UUID.randomUUID()).build();
+    UUID itemId = UUID.randomUUID();
+    CheckShoppingListItemRequest request =
+        new CheckShoppingListItemRequest(new BigDecimal("1"), UUID.randomUUID());
+
+    when(shoppingListItemRepository.findById(itemId)).thenReturn(Optional.empty());
+
+    assertThatThrownBy(() -> shoppingListService.checkItem(currentUser, itemId, request))
+        .isInstanceOf(ShoppingListItemNotFoundException.class);
+    verify(shoppingListItemRepository, never()).save(any(ShoppingListItem.class));
+  }
+
+  @Test
+  void checkItemThrowsForbiddenWhenOwnedByAnotherUser() {
+    User owner = User.builder().id(UUID.randomUUID()).build();
+    User currentUser = User.builder().id(UUID.randomUUID()).build();
+    UUID itemId = UUID.randomUUID();
+    QuantityType weightType = QuantityType.builder().id(UUID.randomUUID()).code("weight").build();
+    Product product =
+        Product.builder().id(UUID.randomUUID()).name("Pomme").quantityType(weightType).build();
+    ShoppingListItem item =
+        ShoppingListItem.builder().id(itemId).user(owner).product(product).build();
+    CheckShoppingListItemRequest request =
+        new CheckShoppingListItemRequest(new BigDecimal("1"), UUID.randomUUID());
+
+    when(shoppingListItemRepository.findById(itemId)).thenReturn(Optional.of(item));
+
+    assertThatThrownBy(() -> shoppingListService.checkItem(currentUser, itemId, request))
+        .isInstanceOf(AccessDeniedException.class);
+    verify(quantityUnitRepository, never()).findById(any(UUID.class));
+    verify(shoppingListItemRepository, never()).save(any(ShoppingListItem.class));
+  }
+
+  @Test
+  void checkItemThrowsNotFoundWhenCheckedUnitMissing() {
+    User currentUser = User.builder().id(UUID.randomUUID()).build();
+    UUID itemId = UUID.randomUUID();
+    UUID checkedUnitId = UUID.randomUUID();
+    QuantityType weightType = QuantityType.builder().id(UUID.randomUUID()).code("weight").build();
+    Product product =
+        Product.builder().id(UUID.randomUUID()).name("Pomme").quantityType(weightType).build();
+    ShoppingListItem item =
+        ShoppingListItem.builder()
+            .id(itemId)
+            .user(currentUser)
+            .product(product)
+            .checked(false)
+            .build();
+    CheckShoppingListItemRequest request =
+        new CheckShoppingListItemRequest(new BigDecimal("1"), checkedUnitId);
+
+    when(shoppingListItemRepository.findById(itemId)).thenReturn(Optional.of(item));
+    when(quantityUnitRepository.findById(checkedUnitId)).thenReturn(Optional.empty());
+
+    assertThatThrownBy(() -> shoppingListService.checkItem(currentUser, itemId, request))
+        .isInstanceOf(QuantityUnitNotFoundException.class);
+    verify(shoppingListItemRepository, never()).save(any(ShoppingListItem.class));
+  }
+
+  @Test
+  void checkItemThrowsBadRequestWhenCheckedUnitTypeIsIncompatible() {
+    User currentUser = User.builder().id(UUID.randomUUID()).build();
+    UUID itemId = UUID.randomUUID();
+    UUID checkedUnitId = UUID.randomUUID();
+    QuantityType weightType = QuantityType.builder().id(UUID.randomUUID()).code("weight").build();
+    QuantityType liquidType = QuantityType.builder().id(UUID.randomUUID()).code("liquid").build();
+    Product product =
+        Product.builder().id(UUID.randomUUID()).name("Pomme").quantityType(weightType).build();
+    ShoppingListItem item =
+        ShoppingListItem.builder()
+            .id(itemId)
+            .user(currentUser)
+            .product(product)
+            .checked(false)
+            .build();
+    QuantityUnit checkedUnit =
+        QuantityUnit.builder()
+            .id(checkedUnitId)
+            .quantityType(liquidType)
+            .code("L")
+            .label("Litre")
+            .build();
+    CheckShoppingListItemRequest request =
+        new CheckShoppingListItemRequest(new BigDecimal("1"), checkedUnitId);
+
+    when(shoppingListItemRepository.findById(itemId)).thenReturn(Optional.of(item));
+    when(quantityUnitRepository.findById(checkedUnitId)).thenReturn(Optional.of(checkedUnit));
+
+    assertThatThrownBy(() -> shoppingListService.checkItem(currentUser, itemId, request))
+        .isInstanceOf(ShoppingListCheckedUnitMismatchException.class);
+    verify(shoppingListItemRepository, never()).save(any(ShoppingListItem.class));
+  }
+
+  @Test
+  void uncheckItemClearsCheckedFieldsAndReturnsMappedResponse() {
+    User currentUser = User.builder().id(UUID.randomUUID()).build();
+    UUID itemId = UUID.randomUUID();
+    QuantityType weightType = QuantityType.builder().id(UUID.randomUUID()).code("weight").build();
+    QuantityUnit checkedUnit =
+        QuantityUnit.builder()
+            .id(UUID.randomUUID())
+            .quantityType(weightType)
+            .code("kg")
+            .label("Kilogramme")
+            .build();
+    Product product =
+        Product.builder().id(UUID.randomUUID()).name("Pomme").quantityType(weightType).build();
+    ShoppingListItem item =
+        ShoppingListItem.builder()
+            .id(itemId)
+            .user(currentUser)
+            .product(product)
+            .checked(true)
+            .checkedQuantity(new BigDecimal("2"))
+            .checkedUnit(checkedUnit)
+            .checkedAt(Instant.now())
+            .build();
+
+    ShoppingListItemResponse expected =
+        new ShoppingListItemResponse(
+            itemId,
+            new ShoppingListProductSummaryResponse(product.getId(), "Pomme"),
+            false,
+            null,
+            null,
+            false,
+            Instant.parse("2026-08-24T10:00:00Z"));
+
+    when(shoppingListItemRepository.findById(itemId)).thenReturn(Optional.of(item));
+    when(shoppingListItemRepository.save(any(ShoppingListItem.class)))
+        .thenAnswer(invocation -> invocation.getArgument(0));
+    when(shoppingListMapper.toItemResponse(any(ShoppingListItem.class))).thenReturn(expected);
+
+    ShoppingListItemResponse result = shoppingListService.uncheckItem(currentUser, itemId);
+
+    assertThat(result).isEqualTo(expected);
+    ArgumentCaptor<ShoppingListItem> captor = ArgumentCaptor.forClass(ShoppingListItem.class);
+    verify(shoppingListItemRepository).save(captor.capture());
+    ShoppingListItem saved = captor.getValue();
+    assertThat(saved.isChecked()).isFalse();
+    assertThat(saved.getCheckedQuantity()).isNull();
+    assertThat(saved.getCheckedUnit()).isNull();
+    assertThat(saved.getCheckedAt()).isNull();
+  }
+
+  @Test
+  void uncheckItemThrowsNotFoundWhenMissing() {
+    User currentUser = User.builder().id(UUID.randomUUID()).build();
+    UUID itemId = UUID.randomUUID();
+    when(shoppingListItemRepository.findById(itemId)).thenReturn(Optional.empty());
+
+    assertThatThrownBy(() -> shoppingListService.uncheckItem(currentUser, itemId))
+        .isInstanceOf(ShoppingListItemNotFoundException.class);
+    verify(shoppingListItemRepository, never()).save(any(ShoppingListItem.class));
   }
 
   @Test

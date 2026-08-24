@@ -3,6 +3,7 @@ package fr.stockshop.stock_api.shoppinglist;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.delete;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.patch;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
@@ -523,9 +524,203 @@ class ShoppingListIntegrationTest {
         .andExpect(status().isUnauthorized());
   }
 
+  @Test
+  void checkShoppingListItemUpdatesStateAndReturns200() throws Exception {
+    String email = "shopping-check-" + UUID.randomUUID() + "@test.fr";
+    String token = registerActivateAndLogin(email);
+    User user = userRepository.findByEmail(email).orElseThrow();
+
+    UUID weightTypeId = weightTypeId();
+    UUID kgUnitId = kgUnitId(weightTypeId);
+    UUID categoryId = saveCategory(user, "Fruits", "#22AA22");
+    UUID productId = insertProduct(user.getId(), categoryId, "Pomme", weightTypeId, kgUnitId, true);
+    UUID shoppingListItemId =
+        insertShoppingListItem(user.getId(), productId, false, null, null, false);
+
+    mockMvc
+        .perform(
+            patch("/api/shopping-list/items/{id}/check", shoppingListItemId)
+                .header("Authorization", "Bearer " + token)
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(
+                    objectMapper.writeValueAsString(
+                        Map.of("checkedQuantity", 1.5, "checkedUnitId", kgUnitId))))
+        .andExpect(status().isOk())
+        .andExpect(jsonPath("$.id").value(shoppingListItemId.toString()))
+        .andExpect(jsonPath("$.isChecked").value(true))
+        .andExpect(jsonPath("$.checkedQuantity").value(1.5))
+        .andExpect(jsonPath("$.checkedUnit.id").value(kgUnitId.toString()))
+        .andExpect(jsonPath("$.checkedUnit.code").value("kg"));
+
+    Map<String, Object> dbRow =
+        jdbcTemplate.queryForMap(
+            "select is_checked, checked_quantity, checked_unit_id, checked_at"
+                + " from shopping_list_items where id = ?",
+            shoppingListItemId);
+    assertThat(dbRow.get("is_checked")).isEqualTo(true);
+    assertThat((BigDecimal) dbRow.get("checked_quantity")).isEqualByComparingTo("1.500");
+    assertThat(dbRow.get("checked_unit_id")).isEqualTo(kgUnitId);
+    assertThat(dbRow.get("checked_at")).isNotNull();
+  }
+
+  @Test
+  void checkShoppingListItemReturnsBadRequestWhenUnitTypeIsIncompatible() throws Exception {
+    String email = "shopping-check-mismatch-" + UUID.randomUUID() + "@test.fr";
+    String token = registerActivateAndLogin(email);
+    User user = userRepository.findByEmail(email).orElseThrow();
+
+    UUID weightTypeId = weightTypeId();
+    UUID liquidTypeId = liquidTypeId();
+    UUID kgUnitId = kgUnitId(weightTypeId);
+    UUID literUnitId = literUnitId(liquidTypeId);
+    UUID categoryId = saveCategory(user, "Legumes", "#AA5500");
+    UUID productId =
+        insertProduct(user.getId(), categoryId, "Carotte", weightTypeId, kgUnitId, true);
+    UUID shoppingListItemId =
+        insertShoppingListItem(user.getId(), productId, false, null, null, false);
+
+    mockMvc
+        .perform(
+            patch("/api/shopping-list/items/{id}/check", shoppingListItemId)
+                .header("Authorization", "Bearer " + token)
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(
+                    objectMapper.writeValueAsString(
+                        Map.of("checkedQuantity", 1, "checkedUnitId", literUnitId))))
+        .andExpect(status().isBadRequest());
+
+    Map<String, Object> dbRow =
+        jdbcTemplate.queryForMap(
+            "select is_checked, checked_quantity, checked_unit_id, checked_at"
+                + " from shopping_list_items where id = ?",
+            shoppingListItemId);
+    assertThat(dbRow.get("is_checked")).isEqualTo(false);
+    assertThat(dbRow.get("checked_quantity")).isNull();
+    assertThat(dbRow.get("checked_unit_id")).isNull();
+    assertThat(dbRow.get("checked_at")).isNull();
+  }
+
+  @Test
+  void checkShoppingListItemReturnsBadRequestWhenQuantityIsZeroOrNegative() throws Exception {
+    String email = "shopping-check-qty-" + UUID.randomUUID() + "@test.fr";
+    String token = registerActivateAndLogin(email);
+    User user = userRepository.findByEmail(email).orElseThrow();
+
+    UUID weightTypeId = weightTypeId();
+    UUID kgUnitId = kgUnitId(weightTypeId);
+    UUID categoryId = saveCategory(user, "Fruits", "#22AA22");
+    UUID productId = insertProduct(user.getId(), categoryId, "Poire", weightTypeId, kgUnitId, true);
+    UUID shoppingListItemId =
+        insertShoppingListItem(user.getId(), productId, false, null, null, false);
+
+    mockMvc
+        .perform(
+            patch("/api/shopping-list/items/{id}/check", shoppingListItemId)
+                .header("Authorization", "Bearer " + token)
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(
+                    objectMapper.writeValueAsString(
+                        Map.of("checkedQuantity", 0, "checkedUnitId", kgUnitId))))
+        .andExpect(status().isBadRequest());
+  }
+
+  @Test
+  void checkShoppingListItemReturnsNotFoundWhenItemUnknown() throws Exception {
+    String email = "shopping-check-404-" + UUID.randomUUID() + "@test.fr";
+    String token = registerActivateAndLogin(email);
+    UUID weightTypeId = weightTypeId();
+    UUID kgUnitId = kgUnitId(weightTypeId);
+
+    mockMvc
+        .perform(
+            patch("/api/shopping-list/items/{id}/check", UUID.randomUUID())
+                .header("Authorization", "Bearer " + token)
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(
+                    objectMapper.writeValueAsString(
+                        Map.of("checkedQuantity", 1, "checkedUnitId", kgUnitId))))
+        .andExpect(status().isNotFound());
+  }
+
+  @Test
+  void uncheckShoppingListItemClearsCheckedFieldsAndReturns200() throws Exception {
+    String email = "shopping-uncheck-" + UUID.randomUUID() + "@test.fr";
+    String token = registerActivateAndLogin(email);
+    User user = userRepository.findByEmail(email).orElseThrow();
+
+    UUID weightTypeId = weightTypeId();
+    UUID kgUnitId = kgUnitId(weightTypeId);
+    UUID categoryId = saveCategory(user, "Fruits", "#22AA22");
+    UUID productId =
+        insertProduct(user.getId(), categoryId, "Banane", weightTypeId, kgUnitId, true);
+    UUID shoppingListItemId =
+        insertShoppingListItem(
+            user.getId(), productId, true, new BigDecimal("2.000"), kgUnitId, false);
+    jdbcTemplate.update(
+        "update shopping_list_items set checked_at = now() where id = ?", shoppingListItemId);
+
+    mockMvc
+        .perform(
+            patch("/api/shopping-list/items/{id}/uncheck", shoppingListItemId)
+                .header("Authorization", "Bearer " + token)
+                .contentType(MediaType.APPLICATION_JSON))
+        .andExpect(status().isOk())
+        .andExpect(jsonPath("$.id").value(shoppingListItemId.toString()))
+        .andExpect(jsonPath("$.isChecked").value(false))
+        .andExpect(jsonPath("$.checkedQuantity").doesNotExist())
+        .andExpect(jsonPath("$.checkedUnit").doesNotExist())
+        .andExpect(jsonPath("$.checkedAt").doesNotExist());
+
+    Map<String, Object> dbRow =
+        jdbcTemplate.queryForMap(
+            "select is_checked, checked_quantity, checked_unit_id, checked_at"
+                + " from shopping_list_items where id = ?",
+            shoppingListItemId);
+    assertThat(dbRow.get("is_checked")).isEqualTo(false);
+    assertThat(dbRow.get("checked_quantity")).isNull();
+    assertThat(dbRow.get("checked_unit_id")).isNull();
+    assertThat(dbRow.get("checked_at")).isNull();
+  }
+
+  @Test
+  void uncheckShoppingListItemReturnsNotFoundWhenItemUnknown() throws Exception {
+    String email = "shopping-uncheck-404-" + UUID.randomUUID() + "@test.fr";
+    String token = registerActivateAndLogin(email);
+
+    mockMvc
+        .perform(
+            patch("/api/shopping-list/items/{id}/uncheck", UUID.randomUUID())
+                .header("Authorization", "Bearer " + token)
+                .contentType(MediaType.APPLICATION_JSON))
+        .andExpect(status().isNotFound());
+  }
+
+  @Test
+  void checkAndUncheckRequireAuthentication() throws Exception {
+    mockMvc
+        .perform(
+            patch("/api/shopping-list/items/{id}/check", UUID.randomUUID())
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(
+                    objectMapper.writeValueAsString(
+                        Map.of("checkedQuantity", 1, "checkedUnitId", UUID.randomUUID()))))
+        .andExpect(status().isUnauthorized());
+
+    mockMvc
+        .perform(
+            patch("/api/shopping-list/items/{id}/uncheck", UUID.randomUUID())
+                .contentType(MediaType.APPLICATION_JSON))
+        .andExpect(status().isUnauthorized());
+  }
+
   private UUID weightTypeId() {
     return jdbcTemplate.queryForObject(
         "select id from quantity_types where code = ?", UUID.class, "weight");
+  }
+
+  private UUID liquidTypeId() {
+    return jdbcTemplate.queryForObject(
+        "select id from quantity_types where code = ?", UUID.class, "liquid");
   }
 
   private UUID kgUnitId(UUID typeId) {
@@ -533,6 +728,14 @@ class ShoppingListIntegrationTest {
         "select id from quantity_units where code = ? and quantity_type_id = ?",
         UUID.class,
         "kg",
+        typeId);
+  }
+
+  private UUID literUnitId(UUID typeId) {
+    return jdbcTemplate.queryForObject(
+        "select id from quantity_units where code = ? and quantity_type_id = ?",
+        UUID.class,
+        "L",
         typeId);
   }
 
