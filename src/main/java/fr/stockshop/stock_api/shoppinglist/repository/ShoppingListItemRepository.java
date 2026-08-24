@@ -6,7 +6,6 @@ import fr.stockshop.stock_api.user.entity.User;
 import java.util.List;
 import java.util.UUID;
 import org.springframework.data.jpa.repository.JpaRepository;
-import org.springframework.data.jpa.repository.Modifying;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 
@@ -25,7 +24,6 @@ public interface ShoppingListItemRepository extends JpaRepository<ShoppingListIt
           + "ORDER BY c.name ASC, p.name ASC")
   List<ShoppingListItem> findVisibleByUserOrderByCategoryAndProductName(@Param("user") User user);
 
-  @Modifying
   @Query(
       value =
           "WITH inserted AS ("
