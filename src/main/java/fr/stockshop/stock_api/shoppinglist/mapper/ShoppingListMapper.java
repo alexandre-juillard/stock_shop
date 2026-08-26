@@ -25,7 +25,8 @@ public class ShoppingListMapper {
         item.getCheckedQuantity(),
         toCheckedUnitResponse(item.getCheckedUnit()),
         item.isAddedAutomatically(),
-        item.getAddedAt());
+        item.getAddedAt(),
+        item.getCheckedAt());
   }
 
   private ShoppingListCheckedUnitResponse toCheckedUnitResponse(QuantityUnit unit) {

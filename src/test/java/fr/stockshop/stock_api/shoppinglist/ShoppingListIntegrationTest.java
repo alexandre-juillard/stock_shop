@@ -551,7 +551,8 @@ class ShoppingListIntegrationTest {
         .andExpect(jsonPath("$.isChecked").value(true))
         .andExpect(jsonPath("$.checkedQuantity").value(1.5))
         .andExpect(jsonPath("$.checkedUnit.id").value(kgUnitId.toString()))
-        .andExpect(jsonPath("$.checkedUnit.code").value("kg"));
+        .andExpect(jsonPath("$.checkedUnit.code").value("kg"))
+        .andExpect(jsonPath("$.checkedAt").isNotEmpty());
 
     Map<String, Object> dbRow =
         jdbcTemplate.queryForMap(

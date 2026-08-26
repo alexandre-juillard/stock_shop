@@ -11,4 +11,5 @@ public record ShoppingListItemResponse(
     BigDecimal checkedQuantity,
     ShoppingListCheckedUnitResponse checkedUnit,
     boolean addedAutomatically,
-    Instant addedAt) {}
+    Instant addedAt,
+    Instant checkedAt) {}
