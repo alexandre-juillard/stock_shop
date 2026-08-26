@@ -85,7 +85,8 @@ class ShoppingListServiceTest {
             null,
             null,
             true,
-            Instant.parse("2026-08-23T08:00:00Z"));
+            Instant.parse("2026-08-23T08:00:00Z"),
+            null);
     ShoppingListItemResponse pommeResponse =
         new ShoppingListItemResponse(
             pomme.getId(),
@@ -94,7 +95,8 @@ class ShoppingListServiceTest {
             null,
             null,
             false,
-            Instant.parse("2026-08-23T08:01:00Z"));
+            Instant.parse("2026-08-23T08:01:00Z"),
+            null);
     ShoppingListItemResponse carotteResponse =
         new ShoppingListItemResponse(
             carotte.getId(),
@@ -103,7 +105,8 @@ class ShoppingListServiceTest {
             null,
             null,
             false,
-            Instant.parse("2026-08-23T08:02:00Z"));
+            Instant.parse("2026-08-23T08:02:00Z"),
+            null);
 
     when(shoppingListItemRepository.findVisibleByUserOrderByCategoryAndProductName(currentUser))
         .thenReturn(List.of(banane, pomme, carotte));
@@ -178,7 +181,8 @@ class ShoppingListServiceTest {
             null,
             null,
             false,
-            saved.getAddedAt());
+            saved.getAddedAt(),
+            null);
 
     when(productRepository.findByIdAndUserAndVisibleTrue(productId, currentUser))
         .thenReturn(Optional.of(product));
@@ -333,7 +337,8 @@ class ShoppingListServiceTest {
             new BigDecimal("1.250"),
             new ShoppingListCheckedUnitResponse(checkedUnitId, "kg", "Kilogramme"),
             false,
-            Instant.parse("2026-08-24T10:00:00Z"));
+            Instant.parse("2026-08-24T10:00:00Z"),
+            Instant.parse("2026-08-24T10:05:00Z"));
 
     when(shoppingListItemRepository.findById(itemId)).thenReturn(Optional.of(item));
     when(quantityUnitRepository.findById(checkedUnitId)).thenReturn(Optional.of(checkedUnit));
@@ -481,7 +486,8 @@ class ShoppingListServiceTest {
             null,
             null,
             false,
-            Instant.parse("2026-08-24T10:00:00Z"));
+            Instant.parse("2026-08-24T10:00:00Z"),
+            null);
 
     when(shoppingListItemRepository.findById(itemId)).thenReturn(Optional.of(item));
     when(shoppingListItemRepository.save(any(ShoppingListItem.class)))
