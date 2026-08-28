@@ -1,8 +1,10 @@
 package fr.stockshop.stock_api.recipe;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.delete;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.put;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
@@ -285,6 +287,101 @@ class RecipeIntegrationTest {
 
     mockMvc
         .perform(get("/api/recipes/" + recipeId).header("Authorization", "Bearer " + outsiderToken))
+        .andExpect(status().isForbidden());
+  }
+
+  @Test
+  void updateRecipeReturnsUpdatedPayloadWhenNameIsValid() throws Exception {
+    String email = "recipes-update-" + UUID.randomUUID() + "@test.fr";
+    String token = registerActivateAndLogin(email);
+    User user = userRepository.findByEmail(email).orElseThrow();
+
+    UUID recipeId = insertRecipe(user.getId(), "Ancien nom", Instant.parse("2026-08-21T14:00:00Z"));
+
+    mockMvc
+        .perform(
+            put("/api/recipes/" + recipeId)
+                .header("Authorization", "Bearer " + token)
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(objectMapper.writeValueAsString(Map.of("name", "Nouveau nom"))))
+        .andExpect(status().isOk())
+        .andExpect(jsonPath("$.id").value(recipeId.toString()))
+        .andExpect(jsonPath("$.name").value("Nouveau nom"));
+
+    String recipeName =
+        jdbcTemplate.queryForObject(
+            "select name from recipes where id = ?", String.class, recipeId);
+    assertThat(recipeName).isEqualTo("Nouveau nom");
+  }
+
+  @Test
+  void deleteRecipeRemovesRecipeAndIngredientsReturnsNoContent() throws Exception {
+    String email = "recipes-delete-" + UUID.randomUUID() + "@test.fr";
+    String token = registerActivateAndLogin(email);
+    User user = userRepository.findByEmail(email).orElseThrow();
+
+    UUID categoryId = saveCategory(user, "Recettes", "#99AABB");
+    UUID weightTypeId = weightTypeId();
+    UUID kgUnitId = kgUnitId(weightTypeId);
+    UUID productId = UUID.randomUUID();
+    insertProduct(user.getId(), categoryId, "Courgette", weightTypeId, kgUnitId, productId, true);
+    insertStockItem(user.getId(), productId, 2.0);
+
+    UUID recipeId =
+        insertRecipe(user.getId(), "A supprimer", Instant.parse("2026-08-21T15:00:00Z"));
+    insertRecipeIngredient(recipeId, productId, kgUnitId, 0.500);
+
+    mockMvc
+        .perform(delete("/api/recipes/" + recipeId).header("Authorization", "Bearer " + token))
+        .andExpect(status().isNoContent());
+
+    Integer recipeCount =
+        jdbcTemplate.queryForObject(
+            "select count(*) from recipes where id = ?", Integer.class, recipeId);
+    Integer ingredientCount =
+        jdbcTemplate.queryForObject(
+            "select count(*) from recipe_ingredients where recipe_id = ?", Integer.class, recipeId);
+
+    assertThat(recipeCount).isEqualTo(0);
+    assertThat(ingredientCount).isEqualTo(0);
+  }
+
+  @Test
+  void updateRecipeOwnedByAnotherUserReturnsForbidden() throws Exception {
+    String ownerEmail = "recipes-owner-update-" + UUID.randomUUID() + "@test.fr";
+    registerActivateAndLogin(ownerEmail);
+    User owner = userRepository.findByEmail(ownerEmail).orElseThrow();
+
+    UUID recipeId =
+        insertRecipe(owner.getId(), "Recette privee", Instant.parse("2026-08-21T16:00:00Z"));
+
+    String outsiderToken =
+        registerActivateAndLogin("recipes-outsider-update-" + UUID.randomUUID() + "@test.fr");
+
+    mockMvc
+        .perform(
+            put("/api/recipes/" + recipeId)
+                .header("Authorization", "Bearer " + outsiderToken)
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(objectMapper.writeValueAsString(Map.of("name", "Nouveau nom"))))
+        .andExpect(status().isForbidden());
+  }
+
+  @Test
+  void deleteRecipeOwnedByAnotherUserReturnsForbidden() throws Exception {
+    String ownerEmail = "recipes-owner-delete-" + UUID.randomUUID() + "@test.fr";
+    registerActivateAndLogin(ownerEmail);
+    User owner = userRepository.findByEmail(ownerEmail).orElseThrow();
+
+    UUID recipeId =
+        insertRecipe(owner.getId(), "Recette privee", Instant.parse("2026-08-21T17:00:00Z"));
+
+    String outsiderToken =
+        registerActivateAndLogin("recipes-outsider-delete-" + UUID.randomUUID() + "@test.fr");
+
+    mockMvc
+        .perform(
+            delete("/api/recipes/" + recipeId).header("Authorization", "Bearer " + outsiderToken))
         .andExpect(status().isForbidden());
   }
 
