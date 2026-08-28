@@ -23,6 +23,7 @@ import fr.stockshop.stock_api.recipe.dto.RecipeProductReferenceResponse;
 import fr.stockshop.stock_api.recipe.dto.RecipeResponse;
 import fr.stockshop.stock_api.recipe.dto.RecipeSummaryResponse;
 import fr.stockshop.stock_api.recipe.dto.RecipeUnitReferenceResponse;
+import fr.stockshop.stock_api.recipe.dto.UpdateRecipeRequest;
 import fr.stockshop.stock_api.recipe.entity.Recipe;
 import fr.stockshop.stock_api.recipe.entity.RecipeIngredient;
 import fr.stockshop.stock_api.recipe.repository.RecipeIngredientRepository;
@@ -235,6 +236,114 @@ class RecipeServiceTest {
         .isInstanceOf(RecipeNotFoundException.class);
 
     verifyNoInteractions(recipeIngredientRepository);
+  }
+
+  @Test
+  void updateRecipeReturnsUpdatedPayloadWhenOwnedByCurrentUser() {
+    UUID userId = UUID.randomUUID();
+    UUID recipeId = UUID.randomUUID();
+
+    User currentUser = User.builder().id(userId).build();
+    Recipe recipe =
+        Recipe.builder()
+            .id(recipeId)
+            .name("Ancien nom")
+            .user(User.builder().id(userId).build())
+            .build();
+
+    when(recipeRepository.findById(recipeId)).thenReturn(Optional.of(recipe));
+    when(recipeRepository.save(recipe)).thenReturn(recipe);
+
+    RecipeResponse result =
+        recipeService.updateRecipe(
+            currentUser, recipeId, new UpdateRecipeRequest("  Nouveau nom  "));
+
+    assertThat(result).isEqualTo(new RecipeResponse(recipeId, "Nouveau nom"));
+    assertThat(recipe.getName()).isEqualTo("Nouveau nom");
+    verify(recipeRepository).save(recipe);
+  }
+
+  @Test
+  void updateRecipeThrowsForbiddenWhenOwnedByAnotherUser() {
+    UUID recipeId = UUID.randomUUID();
+    Recipe recipe =
+        Recipe.builder()
+            .id(recipeId)
+            .name("Privee")
+            .user(User.builder().id(UUID.randomUUID()).build())
+            .build();
+
+    when(recipeRepository.findById(recipeId)).thenReturn(Optional.of(recipe));
+
+    assertThatThrownBy(
+            () ->
+                recipeService.updateRecipe(
+                    User.builder().id(UUID.randomUUID()).build(),
+                    recipeId,
+                    new UpdateRecipeRequest("Nom")))
+        .isInstanceOf(AccessDeniedException.class);
+  }
+
+  @Test
+  void updateRecipeThrowsNotFoundWhenMissing() {
+    UUID recipeId = UUID.randomUUID();
+    when(recipeRepository.findById(recipeId)).thenReturn(Optional.empty());
+
+    assertThatThrownBy(
+            () ->
+                recipeService.updateRecipe(
+                    User.builder().id(UUID.randomUUID()).build(),
+                    recipeId,
+                    new UpdateRecipeRequest("Nom")))
+        .isInstanceOf(RecipeNotFoundException.class);
+  }
+
+  @Test
+  void deleteRecipeRemovesOwnedRecipe() {
+    UUID userId = UUID.randomUUID();
+    UUID recipeId = UUID.randomUUID();
+    User currentUser = User.builder().id(userId).build();
+    Recipe recipe =
+        Recipe.builder()
+            .id(recipeId)
+            .name("A supprimer")
+            .user(User.builder().id(userId).build())
+            .build();
+
+    when(recipeRepository.findById(recipeId)).thenReturn(Optional.of(recipe));
+
+    recipeService.deleteRecipe(currentUser, recipeId);
+
+    verify(recipeRepository).delete(recipe);
+  }
+
+  @Test
+  void deleteRecipeThrowsForbiddenWhenOwnedByAnotherUser() {
+    UUID recipeId = UUID.randomUUID();
+    Recipe recipe =
+        Recipe.builder()
+            .id(recipeId)
+            .name("Privee")
+            .user(User.builder().id(UUID.randomUUID()).build())
+            .build();
+
+    when(recipeRepository.findById(recipeId)).thenReturn(Optional.of(recipe));
+
+    assertThatThrownBy(
+            () ->
+                recipeService.deleteRecipe(User.builder().id(UUID.randomUUID()).build(), recipeId))
+        .isInstanceOf(AccessDeniedException.class);
+  }
+
+  @Test
+  void deleteRecipeThrowsNotFoundWhenMissing() {
+    UUID recipeId = UUID.randomUUID();
+    when(recipeRepository.findById(recipeId)).thenReturn(Optional.empty());
+
+    assertThatThrownBy(
+            () ->
+                recipeService.deleteRecipe(User.builder().id(UUID.randomUUID()).build(), recipeId))
+        .isInstanceOf(RecipeNotFoundException.class);
   }
 
   @Test
