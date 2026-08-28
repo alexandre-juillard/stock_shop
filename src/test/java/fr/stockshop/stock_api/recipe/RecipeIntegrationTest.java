@@ -385,6 +385,233 @@ class RecipeIntegrationTest {
         .andExpect(status().isForbidden());
   }
 
+  @Test
+  void addIngredientCreatesRecipeIngredientReturnsCreated() throws Exception {
+    String email = "recipes-add-ingredient-" + UUID.randomUUID() + "@test.fr";
+    String token = registerActivateAndLogin(email);
+    User user = userRepository.findByEmail(email).orElseThrow();
+
+    UUID categoryId = saveCategory(user, "Recettes", "#ABCDEF");
+    UUID weightTypeId = weightTypeId();
+    UUID kgUnitId = kgUnitId(weightTypeId);
+    UUID productId = UUID.randomUUID();
+    insertProduct(user.getId(), categoryId, "Riz", weightTypeId, kgUnitId, productId, true);
+    insertStockItem(user.getId(), productId, 5.0);
+
+    UUID recipeId = insertRecipe(user.getId(), "Risotto", Instant.parse("2026-08-21T18:00:00Z"));
+
+    mockMvc
+        .perform(
+            post("/api/recipes/" + recipeId + "/ingredients")
+                .header("Authorization", "Bearer " + token)
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(
+                    objectMapper.writeValueAsString(
+                        Map.of("productId", productId, "quantity", 0.350, "unitId", kgUnitId))))
+        .andExpect(status().isCreated())
+        .andExpect(jsonPath("$.product.id").value(productId.toString()))
+        .andExpect(jsonPath("$.product.name").value("Riz"))
+        .andExpect(jsonPath("$.quantity").value(0.35))
+        .andExpect(jsonPath("$.unit.id").value(kgUnitId.toString()))
+        .andExpect(jsonPath("$.unit.code").value("kg"));
+
+    Integer ingredientCount =
+        jdbcTemplate.queryForObject(
+            "select count(*) from recipe_ingredients where recipe_id = ? and product_id = ? and unit_id = ?",
+            Integer.class,
+            recipeId,
+            productId,
+            kgUnitId);
+    assertThat(ingredientCount).isEqualTo(1);
+  }
+
+  @Test
+  void addIngredientWithIncompatibleUnitReturnsBadRequest() throws Exception {
+    String email = "recipes-add-mm-unit-" + UUID.randomUUID() + "@test.fr";
+    String token = registerActivateAndLogin(email);
+    User user = userRepository.findByEmail(email).orElseThrow();
+
+    UUID categoryId = saveCategory(user, "Recettes", "#A1B2C3");
+    UUID weightTypeId = weightTypeId();
+    UUID kgUnitId = kgUnitId(weightTypeId);
+    UUID literUnitId = literUnitId();
+    UUID productId = UUID.randomUUID();
+    insertProduct(user.getId(), categoryId, "Farine", weightTypeId, kgUnitId, productId, true);
+    insertStockItem(user.getId(), productId, 2.0);
+
+    UUID recipeId = insertRecipe(user.getId(), "Crepes", Instant.parse("2026-08-21T18:10:00Z"));
+
+    mockMvc
+        .perform(
+            post("/api/recipes/" + recipeId + "/ingredients")
+                .header("Authorization", "Bearer " + token)
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(
+                    objectMapper.writeValueAsString(
+                        Map.of("productId", productId, "quantity", 1.0, "unitId", literUnitId))))
+        .andExpect(status().isBadRequest());
+  }
+
+  @Test
+  void addIngredientAlreadyPresentReturnsConflict() throws Exception {
+    String email = "recipes-add-duplicate-" + UUID.randomUUID() + "@test.fr";
+    String token = registerActivateAndLogin(email);
+    User user = userRepository.findByEmail(email).orElseThrow();
+
+    UUID categoryId = saveCategory(user, "Recettes", "#C1D2E3");
+    UUID weightTypeId = weightTypeId();
+    UUID kgUnitId = kgUnitId(weightTypeId);
+    UUID productId = UUID.randomUUID();
+    insertProduct(user.getId(), categoryId, "Parmesan", weightTypeId, kgUnitId, productId, true);
+    insertStockItem(user.getId(), productId, 1.0);
+
+    UUID recipeId = insertRecipe(user.getId(), "Pates", Instant.parse("2026-08-21T18:20:00Z"));
+    insertRecipeIngredient(recipeId, productId, kgUnitId, 0.100);
+
+    mockMvc
+        .perform(
+            post("/api/recipes/" + recipeId + "/ingredients")
+                .header("Authorization", "Bearer " + token)
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(
+                    objectMapper.writeValueAsString(
+                        Map.of("productId", productId, "quantity", 0.200, "unitId", kgUnitId))))
+        .andExpect(status().isConflict());
+  }
+
+  @Test
+  void updateIngredientUpdatesQuantityAndUnitReturnsOk() throws Exception {
+    String email = "recipes-update-ingredient-" + UUID.randomUUID() + "@test.fr";
+    String token = registerActivateAndLogin(email);
+    User user = userRepository.findByEmail(email).orElseThrow();
+
+    UUID categoryId = saveCategory(user, "Recettes", "#1122AA");
+    UUID weightTypeId = weightTypeId();
+    UUID kgUnitId = kgUnitId(weightTypeId);
+    UUID gramUnitId = gramUnitId(weightTypeId);
+    UUID productId = UUID.randomUUID();
+    insertProduct(user.getId(), categoryId, "Tomate", weightTypeId, kgUnitId, productId, true);
+    insertStockItem(user.getId(), productId, 3.0);
+
+    UUID recipeId = insertRecipe(user.getId(), "Sauce", Instant.parse("2026-08-21T18:30:00Z"));
+    insertRecipeIngredient(recipeId, productId, kgUnitId, 0.250);
+
+    mockMvc
+        .perform(
+            put("/api/recipes/" + recipeId + "/ingredients/" + productId)
+                .header("Authorization", "Bearer " + token)
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(
+                    objectMapper.writeValueAsString(
+                        Map.of("quantity", 500.0, "unitId", gramUnitId))))
+        .andExpect(status().isOk())
+        .andExpect(jsonPath("$.product.id").value(productId.toString()))
+        .andExpect(jsonPath("$.quantity").value(500.0))
+        .andExpect(jsonPath("$.unit.id").value(gramUnitId.toString()))
+        .andExpect(jsonPath("$.unit.code").value("g"));
+
+    Map<String, Object> row =
+        jdbcTemplate.queryForMap(
+            "select quantity, unit_id from recipe_ingredients where recipe_id = ? and product_id = ?",
+            recipeId,
+            productId);
+    assertThat(row.get("unit_id").toString()).isEqualTo(gramUnitId.toString());
+    assertThat(row.get("quantity").toString()).isEqualTo("500.000");
+  }
+
+  @Test
+  void deleteIngredientRemovesIngredientKeepsRecipeReturnsNoContent() throws Exception {
+    String email = "recipes-delete-ingredient-" + UUID.randomUUID() + "@test.fr";
+    String token = registerActivateAndLogin(email);
+    User user = userRepository.findByEmail(email).orElseThrow();
+
+    UUID categoryId = saveCategory(user, "Recettes", "#2211AA");
+    UUID weightTypeId = weightTypeId();
+    UUID kgUnitId = kgUnitId(weightTypeId);
+    UUID productId = UUID.randomUUID();
+    insertProduct(user.getId(), categoryId, "Oignon", weightTypeId, kgUnitId, productId, true);
+    insertStockItem(user.getId(), productId, 3.0);
+
+    UUID recipeId = insertRecipe(user.getId(), "Soupe", Instant.parse("2026-08-21T18:40:00Z"));
+    insertRecipeIngredient(recipeId, productId, kgUnitId, 0.120);
+
+    mockMvc
+        .perform(
+            delete("/api/recipes/" + recipeId + "/ingredients/" + productId)
+                .header("Authorization", "Bearer " + token))
+        .andExpect(status().isNoContent());
+
+    Integer recipeCount =
+        jdbcTemplate.queryForObject(
+            "select count(*) from recipes where id = ?", Integer.class, recipeId);
+    Integer ingredientCount =
+        jdbcTemplate.queryForObject(
+            "select count(*) from recipe_ingredients where recipe_id = ? and product_id = ?",
+            Integer.class,
+            recipeId,
+            productId);
+
+    assertThat(recipeCount).isEqualTo(1);
+    assertThat(ingredientCount).isEqualTo(0);
+  }
+
+  @Test
+  void updateIngredientOwnedByAnotherUserReturnsForbidden() throws Exception {
+    String ownerEmail = "recipes-own-upd-ing-" + UUID.randomUUID() + "@test.fr";
+    registerActivateAndLogin(ownerEmail);
+    User owner = userRepository.findByEmail(ownerEmail).orElseThrow();
+
+    UUID categoryId = saveCategory(owner, "Recettes", "#998877");
+    UUID weightTypeId = weightTypeId();
+    UUID kgUnitId = kgUnitId(weightTypeId);
+    UUID productId = UUID.randomUUID();
+    insertProduct(owner.getId(), categoryId, "Ail", weightTypeId, kgUnitId, productId, true);
+    insertStockItem(owner.getId(), productId, 1.0);
+
+    UUID recipeId =
+        insertRecipe(owner.getId(), "Recette privee", Instant.parse("2026-08-21T18:50:00Z"));
+    insertRecipeIngredient(recipeId, productId, kgUnitId, 0.050);
+
+    String outsiderToken =
+        registerActivateAndLogin("recipes-out-upd-ing-" + UUID.randomUUID() + "@test.fr");
+
+    mockMvc
+        .perform(
+            put("/api/recipes/" + recipeId + "/ingredients/" + productId)
+                .header("Authorization", "Bearer " + outsiderToken)
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(
+                    objectMapper.writeValueAsString(Map.of("quantity", 0.200, "unitId", kgUnitId))))
+        .andExpect(status().isForbidden());
+  }
+
+  @Test
+  void deleteIngredientOwnedByAnotherUserReturnsForbidden() throws Exception {
+    String ownerEmail = "recipes-own-del-ing-" + UUID.randomUUID() + "@test.fr";
+    registerActivateAndLogin(ownerEmail);
+    User owner = userRepository.findByEmail(ownerEmail).orElseThrow();
+
+    UUID categoryId = saveCategory(owner, "Recettes", "#887766");
+    UUID weightTypeId = weightTypeId();
+    UUID kgUnitId = kgUnitId(weightTypeId);
+    UUID productId = UUID.randomUUID();
+    insertProduct(owner.getId(), categoryId, "Sel", weightTypeId, kgUnitId, productId, true);
+    insertStockItem(owner.getId(), productId, 1.0);
+
+    UUID recipeId =
+        insertRecipe(owner.getId(), "Recette privee", Instant.parse("2026-08-21T19:00:00Z"));
+    insertRecipeIngredient(recipeId, productId, kgUnitId, 0.010);
+
+    String outsiderToken =
+        registerActivateAndLogin("recipes-out-del-ing-" + UUID.randomUUID() + "@test.fr");
+
+    mockMvc
+        .perform(
+            delete("/api/recipes/" + recipeId + "/ingredients/" + productId)
+                .header("Authorization", "Bearer " + outsiderToken))
+        .andExpect(status().isForbidden());
+  }
+
   private UUID weightTypeId() {
     return jdbcTemplate.queryForObject(
         "select id from quantity_types where code = ?", UUID.class, "weight");
@@ -395,6 +622,14 @@ class RecipeIntegrationTest {
         "select id from quantity_units where code = ? and quantity_type_id = ?",
         UUID.class,
         "kg",
+        typeId);
+  }
+
+  private UUID gramUnitId(UUID typeId) {
+    return jdbcTemplate.queryForObject(
+        "select id from quantity_units where code = ? and quantity_type_id = ?",
+        UUID.class,
+        "g",
         typeId);
   }
 
