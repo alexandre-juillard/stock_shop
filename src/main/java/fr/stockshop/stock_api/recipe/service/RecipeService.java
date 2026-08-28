@@ -18,6 +18,7 @@ import fr.stockshop.stock_api.recipe.dto.RecipeProductReferenceResponse;
 import fr.stockshop.stock_api.recipe.dto.RecipeResponse;
 import fr.stockshop.stock_api.recipe.dto.RecipeSummaryResponse;
 import fr.stockshop.stock_api.recipe.dto.RecipeUnitReferenceResponse;
+import fr.stockshop.stock_api.recipe.dto.UpdateRecipeRequest;
 import fr.stockshop.stock_api.recipe.entity.Recipe;
 import fr.stockshop.stock_api.recipe.entity.RecipeIngredient;
 import fr.stockshop.stock_api.recipe.repository.RecipeIngredientRepository;
@@ -92,6 +93,29 @@ public class RecipeService {
             .toList();
 
     return new RecipeDetailResponse(recipe.getId(), recipe.getName(), ingredients);
+  }
+
+  @Transactional
+  public RecipeResponse updateRecipe(User currentUser, UUID recipeId, UpdateRecipeRequest request) {
+    Recipe recipe =
+        recipeRepository
+            .findById(recipeId)
+            .orElseThrow(() -> new RecipeNotFoundException(recipeId));
+    assertOwnership(recipe, currentUser);
+
+    recipe.setName(request.name().trim());
+    Recipe savedRecipe = recipeRepository.save(recipe);
+    return new RecipeResponse(savedRecipe.getId(), savedRecipe.getName());
+  }
+
+  @Transactional
+  public void deleteRecipe(User currentUser, UUID recipeId) {
+    Recipe recipe =
+        recipeRepository
+            .findById(recipeId)
+            .orElseThrow(() -> new RecipeNotFoundException(recipeId));
+    assertOwnership(recipe, currentUser);
+    recipeRepository.delete(recipe);
   }
 
   @Transactional(readOnly = true)
