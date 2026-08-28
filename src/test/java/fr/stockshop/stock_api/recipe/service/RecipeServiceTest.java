@@ -8,7 +8,10 @@ import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
 
 import fr.stockshop.stock_api.exception.ProductNotFoundException;
+import fr.stockshop.stock_api.exception.RecipeIngredientAlreadyExistsException;
+import fr.stockshop.stock_api.exception.RecipeIngredientNotFoundException;
 import fr.stockshop.stock_api.exception.RecipeIngredientProductNotInStockException;
+import fr.stockshop.stock_api.exception.RecipeIngredientUnitMismatchException;
 import fr.stockshop.stock_api.exception.RecipeNotFoundException;
 import fr.stockshop.stock_api.product.entity.Product;
 import fr.stockshop.stock_api.product.repository.ProductRepository;
@@ -23,6 +26,7 @@ import fr.stockshop.stock_api.recipe.dto.RecipeProductReferenceResponse;
 import fr.stockshop.stock_api.recipe.dto.RecipeResponse;
 import fr.stockshop.stock_api.recipe.dto.RecipeSummaryResponse;
 import fr.stockshop.stock_api.recipe.dto.RecipeUnitReferenceResponse;
+import fr.stockshop.stock_api.recipe.dto.UpdateRecipeIngredientRequest;
 import fr.stockshop.stock_api.recipe.dto.UpdateRecipeRequest;
 import fr.stockshop.stock_api.recipe.entity.Recipe;
 import fr.stockshop.stock_api.recipe.entity.RecipeIngredient;
@@ -344,6 +348,242 @@ class RecipeServiceTest {
             () ->
                 recipeService.deleteRecipe(User.builder().id(UUID.randomUUID()).build(), recipeId))
         .isInstanceOf(RecipeNotFoundException.class);
+  }
+
+  @Test
+  void addIngredientCreatesRecipeIngredientWhenReferencesAreValid() {
+    UUID userId = UUID.randomUUID();
+    UUID recipeId = UUID.randomUUID();
+    UUID productId = UUID.randomUUID();
+    UUID unitId = UUID.randomUUID();
+
+    User currentUser = User.builder().id(userId).build();
+    QuantityType quantityType = QuantityType.builder().id(UUID.randomUUID()).build();
+    Recipe recipe = Recipe.builder().id(recipeId).user(User.builder().id(userId).build()).build();
+    Product product =
+        Product.builder()
+            .id(productId)
+            .name("Basilic")
+            .user(User.builder().id(userId).build())
+            .quantityType(quantityType)
+            .build();
+    QuantityUnit unit =
+        QuantityUnit.builder()
+            .id(unitId)
+            .code("kg")
+            .label("Kilogramme")
+            .quantityType(quantityType)
+            .build();
+
+    when(recipeRepository.findById(recipeId)).thenReturn(Optional.of(recipe));
+    when(productRepository.findById(productId)).thenReturn(Optional.of(product));
+    when(stockItemRepository.existsByUserAndProduct(currentUser, product)).thenReturn(true);
+    when(recipeIngredientRepository.existsByRecipeAndProduct_Id(recipe, productId))
+        .thenReturn(false);
+    when(quantityUnitRepository.findById(unitId)).thenReturn(Optional.of(unit));
+    when(recipeIngredientRepository.saveAndFlush(any(RecipeIngredient.class)))
+        .thenAnswer(invocation -> invocation.getArgument(0));
+
+    RecipeIngredientResponse result =
+        recipeService.addIngredient(
+            currentUser,
+            recipeId,
+            new CreateRecipeIngredientRequest(productId, new BigDecimal("0.250"), unitId));
+
+    assertThat(result)
+        .isEqualTo(
+            new RecipeIngredientResponse(
+                new RecipeProductReferenceResponse(productId, "Basilic"),
+                new BigDecimal("0.250"),
+                new RecipeUnitReferenceResponse(unitId, "kg", "Kilogramme")));
+  }
+
+  @Test
+  void addIngredientThrowsConflictWhenIngredientAlreadyExists() {
+    UUID userId = UUID.randomUUID();
+    UUID recipeId = UUID.randomUUID();
+    UUID productId = UUID.randomUUID();
+    UUID unitId = UUID.randomUUID();
+
+    User currentUser = User.builder().id(userId).build();
+    QuantityType quantityType = QuantityType.builder().id(UUID.randomUUID()).build();
+    Recipe recipe = Recipe.builder().id(recipeId).user(User.builder().id(userId).build()).build();
+    Product product =
+        Product.builder()
+            .id(productId)
+            .user(User.builder().id(userId).build())
+            .quantityType(quantityType)
+            .build();
+
+    when(recipeRepository.findById(recipeId)).thenReturn(Optional.of(recipe));
+    when(productRepository.findById(productId)).thenReturn(Optional.of(product));
+    when(stockItemRepository.existsByUserAndProduct(currentUser, product)).thenReturn(true);
+    when(recipeIngredientRepository.existsByRecipeAndProduct_Id(recipe, productId))
+        .thenReturn(true);
+
+    assertThatThrownBy(
+            () ->
+                recipeService.addIngredient(
+                    currentUser,
+                    recipeId,
+                    new CreateRecipeIngredientRequest(productId, new BigDecimal("1.000"), unitId)))
+        .isInstanceOf(RecipeIngredientAlreadyExistsException.class);
+  }
+
+  @Test
+  void addIngredientThrowsBadRequestWhenUnitIsIncompatible() {
+    UUID userId = UUID.randomUUID();
+    UUID recipeId = UUID.randomUUID();
+    UUID productId = UUID.randomUUID();
+    UUID unitId = UUID.randomUUID();
+
+    User currentUser = User.builder().id(userId).build();
+    QuantityType productType = QuantityType.builder().id(UUID.randomUUID()).build();
+    QuantityType otherType = QuantityType.builder().id(UUID.randomUUID()).build();
+
+    Recipe recipe = Recipe.builder().id(recipeId).user(User.builder().id(userId).build()).build();
+    Product product =
+        Product.builder()
+            .id(productId)
+            .user(User.builder().id(userId).build())
+            .quantityType(productType)
+            .build();
+    QuantityUnit incompatibleUnit =
+        QuantityUnit.builder().id(unitId).quantityType(otherType).build();
+
+    when(recipeRepository.findById(recipeId)).thenReturn(Optional.of(recipe));
+    when(productRepository.findById(productId)).thenReturn(Optional.of(product));
+    when(stockItemRepository.existsByUserAndProduct(currentUser, product)).thenReturn(true);
+    when(recipeIngredientRepository.existsByRecipeAndProduct_Id(recipe, productId))
+        .thenReturn(false);
+    when(quantityUnitRepository.findById(unitId)).thenReturn(Optional.of(incompatibleUnit));
+
+    assertThatThrownBy(
+            () ->
+                recipeService.addIngredient(
+                    currentUser,
+                    recipeId,
+                    new CreateRecipeIngredientRequest(productId, new BigDecimal("1.000"), unitId)))
+        .isInstanceOf(RecipeIngredientUnitMismatchException.class);
+  }
+
+  @Test
+  void updateIngredientUpdatesQuantityAndUnitWhenOwnedByCurrentUser() {
+    UUID userId = UUID.randomUUID();
+    UUID recipeId = UUID.randomUUID();
+    UUID productId = UUID.randomUUID();
+    UUID currentUnitId = UUID.randomUUID();
+    UUID newUnitId = UUID.randomUUID();
+
+    User currentUser = User.builder().id(userId).build();
+    QuantityType quantityType = QuantityType.builder().id(UUID.randomUUID()).build();
+    Recipe recipe = Recipe.builder().id(recipeId).user(User.builder().id(userId).build()).build();
+    Product product =
+        Product.builder()
+            .id(productId)
+            .name("Tomate")
+            .quantityType(quantityType)
+            .user(User.builder().id(userId).build())
+            .build();
+    RecipeIngredient ingredient =
+        RecipeIngredient.builder()
+            .recipe(recipe)
+            .product(product)
+            .quantity(new BigDecimal("0.200"))
+            .unit(QuantityUnit.builder().id(currentUnitId).quantityType(quantityType).build())
+            .build();
+    QuantityUnit newUnit =
+        QuantityUnit.builder()
+            .id(newUnitId)
+            .code("g")
+            .label("Gramme")
+            .quantityType(quantityType)
+            .build();
+
+    when(recipeRepository.findById(recipeId)).thenReturn(Optional.of(recipe));
+    when(recipeIngredientRepository.findByRecipeAndProduct_Id(recipe, productId))
+        .thenReturn(Optional.of(ingredient));
+    when(quantityUnitRepository.findById(newUnitId)).thenReturn(Optional.of(newUnit));
+    when(recipeIngredientRepository.save(ingredient)).thenReturn(ingredient);
+
+    RecipeIngredientResponse result =
+        recipeService.updateIngredient(
+            currentUser,
+            recipeId,
+            productId,
+            new UpdateRecipeIngredientRequest(new BigDecimal("0.500"), newUnitId));
+
+    assertThat(ingredient.getQuantity()).isEqualByComparingTo("0.500");
+    assertThat(ingredient.getUnit().getId()).isEqualTo(newUnitId);
+    assertThat(result)
+        .isEqualTo(
+            new RecipeIngredientResponse(
+                new RecipeProductReferenceResponse(productId, "Tomate"),
+                new BigDecimal("0.500"),
+                new RecipeUnitReferenceResponse(newUnitId, "g", "Gramme")));
+  }
+
+  @Test
+  void updateIngredientThrowsNotFoundWhenIngredientIsMissing() {
+    UUID userId = UUID.randomUUID();
+    UUID recipeId = UUID.randomUUID();
+    UUID productId = UUID.randomUUID();
+
+    User currentUser = User.builder().id(userId).build();
+    Recipe recipe = Recipe.builder().id(recipeId).user(User.builder().id(userId).build()).build();
+
+    when(recipeRepository.findById(recipeId)).thenReturn(Optional.of(recipe));
+    when(recipeIngredientRepository.findByRecipeAndProduct_Id(recipe, productId))
+        .thenReturn(Optional.empty());
+
+    assertThatThrownBy(
+            () ->
+                recipeService.updateIngredient(
+                    currentUser,
+                    recipeId,
+                    productId,
+                    new UpdateRecipeIngredientRequest(new BigDecimal("1.000"), UUID.randomUUID())))
+        .isInstanceOf(RecipeIngredientNotFoundException.class);
+  }
+
+  @Test
+  void deleteIngredientRemovesIngredientOnly() {
+    UUID userId = UUID.randomUUID();
+    UUID recipeId = UUID.randomUUID();
+    UUID productId = UUID.randomUUID();
+
+    User currentUser = User.builder().id(userId).build();
+    Recipe recipe = Recipe.builder().id(recipeId).user(User.builder().id(userId).build()).build();
+    RecipeIngredient ingredient =
+        RecipeIngredient.builder()
+            .recipe(recipe)
+            .product(Product.builder().id(productId).build())
+            .build();
+
+    when(recipeRepository.findById(recipeId)).thenReturn(Optional.of(recipe));
+    when(recipeIngredientRepository.findByRecipeAndProduct_Id(recipe, productId))
+        .thenReturn(Optional.of(ingredient));
+
+    recipeService.deleteIngredient(currentUser, recipeId, productId);
+
+    verify(recipeIngredientRepository).delete(ingredient);
+  }
+
+  @Test
+  void deleteIngredientThrowsNotFoundWhenIngredientMissing() {
+    UUID userId = UUID.randomUUID();
+    UUID recipeId = UUID.randomUUID();
+    UUID productId = UUID.randomUUID();
+
+    User currentUser = User.builder().id(userId).build();
+    Recipe recipe = Recipe.builder().id(recipeId).user(User.builder().id(userId).build()).build();
+
+    when(recipeRepository.findById(recipeId)).thenReturn(Optional.of(recipe));
+    when(recipeIngredientRepository.findByRecipeAndProduct_Id(recipe, productId))
+        .thenReturn(Optional.empty());
+
+    assertThatThrownBy(() -> recipeService.deleteIngredient(currentUser, recipeId, productId))
+        .isInstanceOf(RecipeIngredientNotFoundException.class);
   }
 
   @Test

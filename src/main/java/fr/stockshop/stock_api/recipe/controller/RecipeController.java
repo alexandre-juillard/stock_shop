@@ -1,9 +1,12 @@
 package fr.stockshop.stock_api.recipe.controller;
 
+import fr.stockshop.stock_api.recipe.dto.CreateRecipeIngredientRequest;
 import fr.stockshop.stock_api.recipe.dto.CreateRecipeRequest;
 import fr.stockshop.stock_api.recipe.dto.RecipeDetailResponse;
+import fr.stockshop.stock_api.recipe.dto.RecipeIngredientResponse;
 import fr.stockshop.stock_api.recipe.dto.RecipeResponse;
 import fr.stockshop.stock_api.recipe.dto.RecipeSummaryResponse;
+import fr.stockshop.stock_api.recipe.dto.UpdateRecipeIngredientRequest;
 import fr.stockshop.stock_api.recipe.dto.UpdateRecipeRequest;
 import fr.stockshop.stock_api.recipe.service.RecipeService;
 import fr.stockshop.stock_api.user.entity.User;
@@ -69,6 +72,36 @@ public class RecipeController {
   public ResponseEntity<Void> deleteRecipe(
       @AuthenticationPrincipal User currentUser, @PathVariable UUID id) {
     recipeService.deleteRecipe(currentUser, id);
+    return ResponseEntity.noContent().build();
+  }
+
+  @PostMapping("/{id}/ingredients")
+  @Operation(summary = "Ajouter un ingredient a une recette")
+  public ResponseEntity<RecipeIngredientResponse> addIngredient(
+      @AuthenticationPrincipal User currentUser,
+      @PathVariable UUID id,
+      @Valid @RequestBody CreateRecipeIngredientRequest request) {
+    return ResponseEntity.status(HttpStatus.CREATED)
+        .body(recipeService.addIngredient(currentUser, id, request));
+  }
+
+  @PutMapping("/{id}/ingredients/{productId}")
+  @Operation(summary = "Modifier un ingredient d'une recette")
+  public ResponseEntity<RecipeIngredientResponse> updateIngredient(
+      @AuthenticationPrincipal User currentUser,
+      @PathVariable UUID id,
+      @PathVariable UUID productId,
+      @Valid @RequestBody UpdateRecipeIngredientRequest request) {
+    return ResponseEntity.ok(recipeService.updateIngredient(currentUser, id, productId, request));
+  }
+
+  @DeleteMapping("/{id}/ingredients/{productId}")
+  @Operation(summary = "Supprimer un ingredient d'une recette")
+  public ResponseEntity<Void> deleteIngredient(
+      @AuthenticationPrincipal User currentUser,
+      @PathVariable UUID id,
+      @PathVariable UUID productId) {
+    recipeService.deleteIngredient(currentUser, id, productId);
     return ResponseEntity.noContent().build();
   }
 }
