@@ -8,6 +8,7 @@ import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
 
 import fr.stockshop.stock_api.exception.ProductNotFoundException;
+import fr.stockshop.stock_api.exception.RecipeConsumeConflictException;
 import fr.stockshop.stock_api.exception.RecipeIngredientAlreadyExistsException;
 import fr.stockshop.stock_api.exception.RecipeIngredientNotFoundException;
 import fr.stockshop.stock_api.exception.RecipeIngredientProductNotInStockException;
@@ -20,6 +21,8 @@ import fr.stockshop.stock_api.quantity.entity.QuantityUnit;
 import fr.stockshop.stock_api.quantity.repository.QuantityUnitRepository;
 import fr.stockshop.stock_api.recipe.dto.CreateRecipeIngredientRequest;
 import fr.stockshop.stock_api.recipe.dto.CreateRecipeRequest;
+import fr.stockshop.stock_api.recipe.dto.RecipeConsumeConflictResponse;
+import fr.stockshop.stock_api.recipe.dto.RecipeConsumeResponse;
 import fr.stockshop.stock_api.recipe.dto.RecipeDetailResponse;
 import fr.stockshop.stock_api.recipe.dto.RecipeIngredientResponse;
 import fr.stockshop.stock_api.recipe.dto.RecipeProductReferenceResponse;
@@ -32,6 +35,9 @@ import fr.stockshop.stock_api.recipe.entity.Recipe;
 import fr.stockshop.stock_api.recipe.entity.RecipeIngredient;
 import fr.stockshop.stock_api.recipe.repository.RecipeIngredientRepository;
 import fr.stockshop.stock_api.recipe.repository.RecipeRepository;
+import fr.stockshop.stock_api.shoppinglist.entity.ShoppingListItem;
+import fr.stockshop.stock_api.shoppinglist.repository.ShoppingListItemRepository;
+import fr.stockshop.stock_api.stock.entity.StockItem;
 import fr.stockshop.stock_api.stock.repository.StockItemRepository;
 import fr.stockshop.stock_api.user.entity.User;
 import java.math.BigDecimal;
@@ -55,6 +61,7 @@ class RecipeServiceTest {
   @Mock private ProductRepository productRepository;
   @Mock private QuantityUnitRepository quantityUnitRepository;
   @Mock private StockItemRepository stockItemRepository;
+  @Mock private ShoppingListItemRepository shoppingListItemRepository;
 
   @InjectMocks private RecipeService recipeService;
 
@@ -74,7 +81,11 @@ class RecipeServiceTest {
     assertThat(result).isEqualTo(new RecipeResponse(recipeId, "Pesto"));
     verify(recipeRepository).save(any(Recipe.class));
     verifyNoInteractions(
-        recipeIngredientRepository, productRepository, quantityUnitRepository, stockItemRepository);
+        recipeIngredientRepository,
+        productRepository,
+        quantityUnitRepository,
+        stockItemRepository,
+        shoppingListItemRepository);
   }
 
   @Test
@@ -584,6 +595,307 @@ class RecipeServiceTest {
 
     assertThatThrownBy(() -> recipeService.deleteIngredient(currentUser, recipeId, productId))
         .isInstanceOf(RecipeIngredientNotFoundException.class);
+  }
+
+  @Test
+  void consumeRecipeReturnsConflictWithMissingItemsWhenForceDisabled() {
+    UUID userId = UUID.randomUUID();
+    UUID recipeId = UUID.randomUUID();
+    UUID productId = UUID.randomUUID();
+
+    User currentUser = User.builder().id(userId).build();
+    QuantityType quantityType = QuantityType.builder().id(UUID.randomUUID()).build();
+    QuantityUnit kgUnit =
+        QuantityUnit.builder()
+            .id(UUID.randomUUID())
+            .code("kg")
+            .label("Kilogramme")
+            .quantityType(quantityType)
+            .conversionFactor(BigDecimal.ONE)
+            .baseUnit(true)
+            .build();
+    Product product =
+        Product.builder()
+            .id(productId)
+            .name("Farine")
+            .user(User.builder().id(userId).build())
+            .quantityType(quantityType)
+            .baseUnit(kgUnit)
+            .build();
+    Recipe recipe = Recipe.builder().id(recipeId).user(User.builder().id(userId).build()).build();
+    RecipeIngredient ingredient =
+        RecipeIngredient.builder()
+            .recipe(recipe)
+            .product(product)
+            .unit(kgUnit)
+            .quantity(new BigDecimal("0.500"))
+            .build();
+
+    when(recipeRepository.findById(recipeId)).thenReturn(Optional.of(recipe));
+    when(recipeIngredientRepository.findByRecipeOrderByProductNameAsc(recipe))
+        .thenReturn(List.of(ingredient));
+    when(stockItemRepository.findByUserAndProduct_IdIn(currentUser, List.of(productId)))
+        .thenReturn(List.of());
+
+    assertThatThrownBy(() -> recipeService.consumeRecipe(currentUser, recipeId, false))
+        .isInstanceOf(RecipeConsumeConflictException.class)
+        .satisfies(
+            throwable -> {
+              RecipeConsumeConflictResponse conflict =
+                  ((RecipeConsumeConflictException) throwable).getConflict();
+              assertThat(conflict.missing()).hasSize(1);
+              assertThat(conflict.missing().get(0).productId()).isEqualTo(productId);
+              assertThat(conflict.insufficient()).isEmpty();
+            });
+
+    verifyNoInteractions(shoppingListItemRepository);
+  }
+
+  @Test
+  void consumeRecipeReturnsConflictWithInsufficientItemsWhenForceDisabled() {
+    UUID userId = UUID.randomUUID();
+    UUID recipeId = UUID.randomUUID();
+    UUID productId = UUID.randomUUID();
+
+    User currentUser = User.builder().id(userId).build();
+    QuantityType quantityType = QuantityType.builder().id(UUID.randomUUID()).build();
+    QuantityUnit kgUnit =
+        QuantityUnit.builder()
+            .id(UUID.randomUUID())
+            .code("kg")
+            .label("Kilogramme")
+            .quantityType(quantityType)
+            .conversionFactor(BigDecimal.ONE)
+            .baseUnit(true)
+            .build();
+    Product product =
+        Product.builder()
+            .id(productId)
+            .name("Riz")
+            .user(User.builder().id(userId).build())
+            .quantityType(quantityType)
+            .baseUnit(kgUnit)
+            .build();
+    Recipe recipe = Recipe.builder().id(recipeId).user(User.builder().id(userId).build()).build();
+    RecipeIngredient ingredient =
+        RecipeIngredient.builder()
+            .recipe(recipe)
+            .product(product)
+            .unit(kgUnit)
+            .quantity(new BigDecimal("0.500"))
+            .build();
+    StockItem stockItem =
+        StockItem.builder()
+            .id(UUID.randomUUID())
+            .user(currentUser)
+            .product(product)
+            .quantity(new BigDecimal("0.200"))
+            .build();
+
+    when(recipeRepository.findById(recipeId)).thenReturn(Optional.of(recipe));
+    when(recipeIngredientRepository.findByRecipeOrderByProductNameAsc(recipe))
+        .thenReturn(List.of(ingredient));
+    when(stockItemRepository.findByUserAndProduct_IdIn(currentUser, List.of(productId)))
+        .thenReturn(List.of(stockItem));
+
+    assertThatThrownBy(() -> recipeService.consumeRecipe(currentUser, recipeId, false))
+        .isInstanceOf(RecipeConsumeConflictException.class)
+        .satisfies(
+            throwable -> {
+              RecipeConsumeConflictResponse conflict =
+                  ((RecipeConsumeConflictException) throwable).getConflict();
+              assertThat(conflict.missing()).isEmpty();
+              assertThat(conflict.insufficient()).hasSize(1);
+              assertThat(conflict.insufficient().get(0).productId()).isEqualTo(productId);
+              assertThat(conflict.insufficient().get(0).required()).isEqualByComparingTo("0.500");
+              assertThat(conflict.insufficient().get(0).available()).isEqualByComparingTo("0.200");
+            });
+
+    assertThat(stockItem.getQuantity()).isEqualByComparingTo("0.200");
+    verifyNoInteractions(shoppingListItemRepository);
+  }
+
+  @Test
+  void consumeRecipeDeductsStockWithConversionAndReevaluatesThreshold() {
+    UUID userId = UUID.randomUUID();
+    UUID recipeId = UUID.randomUUID();
+    UUID productId = UUID.randomUUID();
+
+    User currentUser = User.builder().id(userId).build();
+    QuantityType quantityType = QuantityType.builder().id(UUID.randomUUID()).build();
+    QuantityUnit kgUnit =
+        QuantityUnit.builder()
+            .id(UUID.randomUUID())
+            .code("kg")
+            .label("Kilogramme")
+            .quantityType(quantityType)
+            .conversionFactor(BigDecimal.ONE)
+            .baseUnit(true)
+            .build();
+    QuantityUnit gramUnit =
+        QuantityUnit.builder()
+            .id(UUID.randomUUID())
+            .code("g")
+            .label("Gramme")
+            .quantityType(quantityType)
+            .conversionFactor(new BigDecimal("0.001"))
+            .baseUnit(false)
+            .build();
+    Product product =
+        Product.builder()
+            .id(productId)
+            .name("Sucre")
+            .user(User.builder().id(userId).build())
+            .quantityType(quantityType)
+            .baseUnit(kgUnit)
+            .build();
+    Recipe recipe = Recipe.builder().id(recipeId).user(User.builder().id(userId).build()).build();
+    RecipeIngredient ingredient =
+        RecipeIngredient.builder()
+            .recipe(recipe)
+            .product(product)
+            .unit(gramUnit)
+            .quantity(new BigDecimal("500.000"))
+            .build();
+    StockItem stockItem =
+        StockItem.builder()
+            .id(UUID.randomUUID())
+            .user(currentUser)
+            .product(product)
+            .quantity(new BigDecimal("2.000"))
+            .lowThreshold(new BigDecimal("1.600"))
+            .build();
+
+    when(recipeRepository.findById(recipeId)).thenReturn(Optional.of(recipe));
+    when(recipeIngredientRepository.findByRecipeOrderByProductNameAsc(recipe))
+        .thenReturn(List.of(ingredient));
+    when(stockItemRepository.findByUserAndProduct_IdIn(currentUser, List.of(productId)))
+        .thenReturn(List.of(stockItem));
+    when(shoppingListItemRepository.existsByUserAndProduct(currentUser, product)).thenReturn(false);
+
+    RecipeConsumeResponse response = recipeService.consumeRecipe(currentUser, recipeId, false);
+
+    assertThat(response.results()).hasSize(1);
+    assertThat(response.results().get(0).productId()).isEqualTo(productId);
+    assertThat(response.results().get(0).deducted()).isEqualByComparingTo("0.500");
+    assertThat(response.results().get(0).newStockQuantity()).isEqualByComparingTo("1.500");
+    assertThat(response.results().get(0).forced()).isFalse();
+    assertThat(stockItem.getQuantity()).isEqualByComparingTo("1.500");
+
+    verify(shoppingListItemRepository).save(any(ShoppingListItem.class));
+  }
+
+  @Test
+  void consumeRecipeWithForceHandlesSufficientInsufficientAndMissingTogether() {
+    UUID userId = UUID.randomUUID();
+    UUID recipeId = UUID.randomUUID();
+    UUID productAId = UUID.randomUUID();
+    UUID productBId = UUID.randomUUID();
+    UUID productCId = UUID.randomUUID();
+
+    User currentUser = User.builder().id(userId).build();
+    QuantityType quantityType = QuantityType.builder().id(UUID.randomUUID()).build();
+    QuantityUnit kgUnit =
+        QuantityUnit.builder()
+            .id(UUID.randomUUID())
+            .code("kg")
+            .label("Kilogramme")
+            .quantityType(quantityType)
+            .conversionFactor(BigDecimal.ONE)
+            .baseUnit(true)
+            .build();
+
+    Product productA =
+        Product.builder()
+            .id(productAId)
+            .name("Tomate")
+            .user(User.builder().id(userId).build())
+            .quantityType(quantityType)
+            .baseUnit(kgUnit)
+            .build();
+    Product productB =
+        Product.builder()
+            .id(productBId)
+            .name("Sel")
+            .user(User.builder().id(userId).build())
+            .quantityType(quantityType)
+            .baseUnit(kgUnit)
+            .build();
+    Product productC =
+        Product.builder()
+            .id(productCId)
+            .name("Poivre")
+            .user(User.builder().id(userId).build())
+            .quantityType(quantityType)
+            .baseUnit(kgUnit)
+            .build();
+
+    Recipe recipe = Recipe.builder().id(recipeId).user(User.builder().id(userId).build()).build();
+    RecipeIngredient ingredientA =
+        RecipeIngredient.builder()
+            .recipe(recipe)
+            .product(productA)
+            .unit(kgUnit)
+            .quantity(new BigDecimal("0.500"))
+            .build();
+    RecipeIngredient ingredientB =
+        RecipeIngredient.builder()
+            .recipe(recipe)
+            .product(productB)
+            .unit(kgUnit)
+            .quantity(new BigDecimal("0.500"))
+            .build();
+    RecipeIngredient ingredientC =
+        RecipeIngredient.builder()
+            .recipe(recipe)
+            .product(productC)
+            .unit(kgUnit)
+            .quantity(new BigDecimal("0.500"))
+            .build();
+
+    StockItem stockA =
+        StockItem.builder()
+            .id(UUID.randomUUID())
+            .user(currentUser)
+            .product(productA)
+            .quantity(new BigDecimal("1.000"))
+            .build();
+    StockItem stockB =
+        StockItem.builder()
+            .id(UUID.randomUUID())
+            .user(currentUser)
+            .product(productB)
+            .quantity(new BigDecimal("0.200"))
+            .lowThreshold(new BigDecimal("0.500"))
+            .build();
+
+    when(recipeRepository.findById(recipeId)).thenReturn(Optional.of(recipe));
+    when(recipeIngredientRepository.findByRecipeOrderByProductNameAsc(recipe))
+        .thenReturn(List.of(ingredientA, ingredientB, ingredientC));
+    when(stockItemRepository.findByUserAndProduct_IdIn(
+            currentUser, List.of(productAId, productBId, productCId)))
+        .thenReturn(List.of(stockA, stockB));
+    when(shoppingListItemRepository.existsByUserAndProduct(currentUser, productB))
+        .thenReturn(false);
+
+    RecipeConsumeResponse response = recipeService.consumeRecipe(currentUser, recipeId, true);
+
+    assertThat(response.results()).hasSize(2);
+
+    assertThat(response.results().get(0).productId()).isEqualTo(productAId);
+    assertThat(response.results().get(0).deducted()).isEqualByComparingTo("0.500");
+    assertThat(response.results().get(0).newStockQuantity()).isEqualByComparingTo("0.500");
+    assertThat(response.results().get(0).forced()).isFalse();
+
+    assertThat(response.results().get(1).productId()).isEqualTo(productBId);
+    assertThat(response.results().get(1).deducted()).isEqualByComparingTo("0.200");
+    assertThat(response.results().get(1).newStockQuantity()).isEqualByComparingTo("0.000");
+    assertThat(response.results().get(1).forced()).isTrue();
+
+    assertThat(stockA.getQuantity()).isEqualByComparingTo("0.500");
+    assertThat(stockB.getQuantity()).isEqualByComparingTo("0.000");
+
+    verify(shoppingListItemRepository).save(any(ShoppingListItem.class));
   }
 
   @Test

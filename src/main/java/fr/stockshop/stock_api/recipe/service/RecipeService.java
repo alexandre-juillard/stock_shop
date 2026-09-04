@@ -2,6 +2,7 @@ package fr.stockshop.stock_api.recipe.service;
 
 import fr.stockshop.stock_api.exception.ProductNotFoundException;
 import fr.stockshop.stock_api.exception.QuantityUnitNotFoundException;
+import fr.stockshop.stock_api.exception.RecipeConsumeConflictException;
 import fr.stockshop.stock_api.exception.RecipeIngredientAlreadyExistsException;
 import fr.stockshop.stock_api.exception.RecipeIngredientDuplicateProductException;
 import fr.stockshop.stock_api.exception.RecipeIngredientNotFoundException;
@@ -14,6 +15,11 @@ import fr.stockshop.stock_api.quantity.entity.QuantityUnit;
 import fr.stockshop.stock_api.quantity.repository.QuantityUnitRepository;
 import fr.stockshop.stock_api.recipe.dto.CreateRecipeIngredientRequest;
 import fr.stockshop.stock_api.recipe.dto.CreateRecipeRequest;
+import fr.stockshop.stock_api.recipe.dto.RecipeConsumeConflictResponse;
+import fr.stockshop.stock_api.recipe.dto.RecipeConsumeInsufficientItemResponse;
+import fr.stockshop.stock_api.recipe.dto.RecipeConsumeMissingItemResponse;
+import fr.stockshop.stock_api.recipe.dto.RecipeConsumeResponse;
+import fr.stockshop.stock_api.recipe.dto.RecipeConsumeResultItemResponse;
 import fr.stockshop.stock_api.recipe.dto.RecipeDetailResponse;
 import fr.stockshop.stock_api.recipe.dto.RecipeIngredientResponse;
 import fr.stockshop.stock_api.recipe.dto.RecipeProductReferenceResponse;
@@ -26,12 +32,18 @@ import fr.stockshop.stock_api.recipe.entity.Recipe;
 import fr.stockshop.stock_api.recipe.entity.RecipeIngredient;
 import fr.stockshop.stock_api.recipe.repository.RecipeIngredientRepository;
 import fr.stockshop.stock_api.recipe.repository.RecipeRepository;
+import fr.stockshop.stock_api.shoppinglist.entity.ShoppingListItem;
+import fr.stockshop.stock_api.shoppinglist.repository.ShoppingListItemRepository;
+import fr.stockshop.stock_api.stock.entity.StockItem;
 import fr.stockshop.stock_api.stock.repository.StockItemRepository;
 import fr.stockshop.stock_api.user.entity.User;
 import java.math.BigDecimal;
+import java.math.RoundingMode;
 import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.HashSet;
 import java.util.List;
+import java.util.Map;
 import java.util.Set;
 import java.util.UUID;
 import lombok.RequiredArgsConstructor;
@@ -44,11 +56,14 @@ import org.springframework.transaction.annotation.Transactional;
 @RequiredArgsConstructor
 public class RecipeService {
 
+  private static final int STOCK_QUANTITY_SCALE = 3;
+
   private final RecipeRepository recipeRepository;
   private final RecipeIngredientRepository recipeIngredientRepository;
   private final ProductRepository productRepository;
   private final QuantityUnitRepository quantityUnitRepository;
   private final StockItemRepository stockItemRepository;
+  private final ShoppingListItemRepository shoppingListItemRepository;
 
   @Transactional
   public RecipeResponse createRecipe(User currentUser, CreateRecipeRequest request) {
@@ -162,6 +177,88 @@ public class RecipeService {
     recipeIngredientRepository.delete(ingredient);
   }
 
+  @Transactional
+  public RecipeConsumeResponse consumeRecipe(User currentUser, UUID recipeId, boolean force) {
+    Recipe recipe = resolveOwnedRecipe(currentUser, recipeId);
+    List<RecipeIngredient> ingredients =
+        recipeIngredientRepository.findByRecipeOrderByProductNameAsc(recipe);
+
+    if (ingredients.isEmpty()) {
+      return new RecipeConsumeResponse(List.of());
+    }
+
+    List<UUID> productIds =
+        ingredients.stream().map(ingredient -> ingredient.getProduct().getId()).toList();
+    Map<UUID, StockItem> stockByProductId = new HashMap<>();
+    stockItemRepository
+        .findByUserAndProduct_IdIn(currentUser, productIds)
+        .forEach(stockItem -> stockByProductId.put(stockItem.getProduct().getId(), stockItem));
+
+    List<RecipeConsumeMissingItemResponse> missing = new ArrayList<>();
+    List<RecipeConsumeInsufficientItemResponse> insufficient = new ArrayList<>();
+    List<ConsumptionPlanLine> lines = new ArrayList<>();
+
+    for (RecipeIngredient ingredient : ingredients) {
+      Product product = ingredient.getProduct();
+      BigDecimal required = toBaseUnitQuantity(ingredient);
+
+      StockItem stockItem = stockByProductId.get(product.getId());
+      if (stockItem == null) {
+        missing.add(new RecipeConsumeMissingItemResponse(product.getId(), product.getName()));
+        continue;
+      }
+
+      BigDecimal available = normalizeStockQuantity(stockItem.getQuantity());
+      boolean hasEnough = available.compareTo(required) >= 0;
+      if (!hasEnough) {
+        insufficient.add(
+            new RecipeConsumeInsufficientItemResponse(
+                product.getId(), product.getName(), required, available));
+      }
+
+      BigDecimal deducted;
+      BigDecimal newStockQuantity;
+      boolean forced;
+
+      if (hasEnough) {
+        deducted = required;
+        newStockQuantity = normalizeStockQuantity(available.subtract(required));
+        forced = false;
+      } else if (force) {
+        deducted = available;
+        newStockQuantity = BigDecimal.ZERO.setScale(STOCK_QUANTITY_SCALE, RoundingMode.HALF_UP);
+        forced = true;
+      } else {
+        deducted = BigDecimal.ZERO.setScale(STOCK_QUANTITY_SCALE, RoundingMode.HALF_UP);
+        newStockQuantity = available;
+        forced = false;
+      }
+
+      lines.add(new ConsumptionPlanLine(product, stockItem, deducted, newStockQuantity, forced));
+    }
+
+    if (!force && (!missing.isEmpty() || !insufficient.isEmpty())) {
+      throw new RecipeConsumeConflictException(
+          new RecipeConsumeConflictResponse(missing, insufficient));
+    }
+
+    List<RecipeConsumeResultItemResponse> results = new ArrayList<>();
+    for (ConsumptionPlanLine line : lines) {
+      line.stockItem().setQuantity(line.newStockQuantity());
+      applyLowThresholdRule(currentUser, line.stockItem());
+
+      results.add(
+          new RecipeConsumeResultItemResponse(
+              line.product().getId(),
+              line.product().getName(),
+              line.deducted(),
+              line.newStockQuantity(),
+              line.forced()));
+    }
+
+    return new RecipeConsumeResponse(results);
+  }
+
   @Transactional(readOnly = true)
   public List<RecipeResponse> findRecipesByIngredient(User currentUser, UUID productId) {
     Product product =
@@ -200,6 +297,37 @@ public class RecipeService {
     }
 
     return resolvedIngredients;
+  }
+
+  private BigDecimal toBaseUnitQuantity(RecipeIngredient ingredient) {
+    BigDecimal quantityInReference =
+        ingredient.getQuantity().multiply(ingredient.getUnit().getConversionFactor());
+    return quantityInReference.divide(
+        ingredient.getProduct().getBaseUnit().getConversionFactor(),
+        STOCK_QUANTITY_SCALE,
+        RoundingMode.HALF_UP);
+  }
+
+  private BigDecimal normalizeStockQuantity(BigDecimal quantity) {
+    return quantity.setScale(STOCK_QUANTITY_SCALE, RoundingMode.HALF_UP);
+  }
+
+  private void applyLowThresholdRule(User currentUser, StockItem stockItem) {
+    boolean isBelowThreshold =
+        stockItem.getLowThreshold() != null
+            && stockItem.getQuantity().compareTo(stockItem.getLowThreshold()) <= 0;
+
+    if (isBelowThreshold
+        && !shoppingListItemRepository.existsByUserAndProduct(
+            currentUser, stockItem.getProduct())) {
+      shoppingListItemRepository.save(
+          ShoppingListItem.builder()
+              .user(currentUser)
+              .product(stockItem.getProduct())
+              .checked(false)
+              .addedAutomatically(true)
+              .build());
+    }
   }
 
   private RecipeIngredientResponse toIngredientResponse(RecipeIngredient ingredient) {
@@ -261,6 +389,13 @@ public class RecipeService {
       throw new AccessDeniedException("Recipe does not belong to current user");
     }
   }
+
+  private record ConsumptionPlanLine(
+      Product product,
+      StockItem stockItem,
+      BigDecimal deducted,
+      BigDecimal newStockQuantity,
+      boolean forced) {}
 
   private record ResolvedRecipeIngredient(
       Product product, QuantityUnit unit, BigDecimal quantity) {}

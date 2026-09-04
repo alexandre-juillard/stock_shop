@@ -1,7 +1,9 @@
 package fr.stockshop.stock_api.recipe.controller;
 
+import fr.stockshop.stock_api.exception.RecipeConsumeConflictException;
 import fr.stockshop.stock_api.recipe.dto.CreateRecipeIngredientRequest;
 import fr.stockshop.stock_api.recipe.dto.CreateRecipeRequest;
+import fr.stockshop.stock_api.recipe.dto.RecipeConsumeResponse;
 import fr.stockshop.stock_api.recipe.dto.RecipeDetailResponse;
 import fr.stockshop.stock_api.recipe.dto.RecipeIngredientResponse;
 import fr.stockshop.stock_api.recipe.dto.RecipeResponse;
@@ -26,6 +28,7 @@ import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.PutMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
 @RestController
@@ -103,5 +106,20 @@ public class RecipeController {
       @PathVariable UUID productId) {
     recipeService.deleteIngredient(currentUser, id, productId);
     return ResponseEntity.noContent().build();
+  }
+
+  @PostMapping("/{id}/consume")
+  @Operation(summary = "Consommer une recette et deduire automatiquement le stock")
+  public ResponseEntity<?> consumeRecipe(
+      @AuthenticationPrincipal User currentUser,
+      @PathVariable UUID id,
+      @RequestParam(required = false) Boolean force) {
+    boolean forceEnabled = Boolean.TRUE.equals(force);
+    try {
+      RecipeConsumeResponse response = recipeService.consumeRecipe(currentUser, id, forceEnabled);
+      return ResponseEntity.ok(response);
+    } catch (RecipeConsumeConflictException ex) {
+      return ResponseEntity.status(HttpStatus.CONFLICT).body(ex.getConflict());
+    }
   }
 }

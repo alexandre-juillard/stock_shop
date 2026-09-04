@@ -14,6 +14,7 @@ public interface RecipeIngredientRepository extends JpaRepository<RecipeIngredie
   @Query(
       "SELECT ri FROM RecipeIngredient ri "
           + "JOIN FETCH ri.product p "
+          + "JOIN FETCH p.baseUnit bu "
           + "JOIN FETCH ri.unit u "
           + "WHERE ri.recipe = :recipe "
           + "ORDER BY p.name ASC, ri.id ASC")
