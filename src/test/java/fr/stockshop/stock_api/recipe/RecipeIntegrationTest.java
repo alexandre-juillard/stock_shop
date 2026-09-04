@@ -15,6 +15,7 @@ import fr.stockshop.stock_api.category.repository.CategoryRepository;
 import fr.stockshop.stock_api.mail.EmailService;
 import fr.stockshop.stock_api.user.entity.User;
 import fr.stockshop.stock_api.user.repository.UserRepository;
+import java.math.BigDecimal;
 import java.sql.Timestamp;
 import java.time.Instant;
 import java.util.List;
@@ -610,6 +611,234 @@ class RecipeIntegrationTest {
             delete("/api/recipes/" + recipeId + "/ingredients/" + productId)
                 .header("Authorization", "Bearer " + outsiderToken))
         .andExpect(status().isForbidden());
+  }
+
+  @Test
+  void consumeRecipeDeductsAllIngredientsWithUnitConversionReturnsOk() throws Exception {
+    String email = "recipes-consume-ok-" + UUID.randomUUID() + "@test.fr";
+    String token = registerActivateAndLogin(email);
+    User user = userRepository.findByEmail(email).orElseThrow();
+
+    UUID categoryId = saveCategory(user, "Recettes", "#556677");
+    UUID weightTypeId = weightTypeId();
+    UUID kgUnitId = kgUnitId(weightTypeId);
+    UUID gramUnitId = gramUnitId(weightTypeId);
+
+    UUID productId1 = UUID.randomUUID();
+    UUID productId2 = UUID.randomUUID();
+    insertProduct(user.getId(), categoryId, "Farine", weightTypeId, kgUnitId, productId1, true);
+    insertProduct(user.getId(), categoryId, "Sucre", weightTypeId, kgUnitId, productId2, true);
+    insertStockItem(user.getId(), productId1, 2.0);
+    insertStockItem(user.getId(), productId2, 1.0);
+
+    UUID recipeId = insertRecipe(user.getId(), "Gateau", Instant.parse("2026-08-22T10:00:00Z"));
+    insertRecipeIngredient(recipeId, productId1, gramUnitId, 500.0);
+    insertRecipeIngredient(recipeId, productId2, kgUnitId, 0.250);
+
+    mockMvc
+        .perform(
+            post("/api/recipes/" + recipeId + "/consume")
+                .header("Authorization", "Bearer " + token))
+        .andExpect(status().isOk())
+        .andExpect(jsonPath("$.results.length()").value(2))
+        .andExpect(jsonPath("$.results[0].productId").value(productId1.toString()))
+        .andExpect(jsonPath("$.results[0].deducted").value(0.5))
+        .andExpect(jsonPath("$.results[0].newStockQuantity").value(1.5))
+        .andExpect(jsonPath("$.results[0].forced").value(false))
+        .andExpect(jsonPath("$.results[1].productId").value(productId2.toString()))
+        .andExpect(jsonPath("$.results[1].deducted").value(0.25))
+        .andExpect(jsonPath("$.results[1].newStockQuantity").value(0.75))
+        .andExpect(jsonPath("$.results[1].forced").value(false));
+
+    BigDecimal remainingProduct1 =
+        jdbcTemplate.queryForObject(
+            "select quantity from stock_items where user_id = ? and product_id = ?",
+            BigDecimal.class,
+            user.getId(),
+            productId1);
+    BigDecimal remainingProduct2 =
+        jdbcTemplate.queryForObject(
+            "select quantity from stock_items where user_id = ? and product_id = ?",
+            BigDecimal.class,
+            user.getId(),
+            productId2);
+
+    assertThat(remainingProduct1).isEqualByComparingTo("1.500");
+    assertThat(remainingProduct2).isEqualByComparingTo("0.750");
+  }
+
+  @Test
+  void consumeRecipeWithoutForceReturnsConflictWhenMissingAndKeepsAtomicity() throws Exception {
+    String email = "recipes-consume-missing-" + UUID.randomUUID() + "@test.fr";
+    String token = registerActivateAndLogin(email);
+    User user = userRepository.findByEmail(email).orElseThrow();
+
+    UUID categoryId = saveCategory(user, "Recettes", "#667788");
+    UUID weightTypeId = weightTypeId();
+    UUID kgUnitId = kgUnitId(weightTypeId);
+
+    UUID inStockProductId = UUID.randomUUID();
+    UUID missingProductId = UUID.randomUUID();
+    insertProduct(
+        user.getId(), categoryId, "Tomate", weightTypeId, kgUnitId, inStockProductId, true);
+    insertProduct(
+        user.getId(), categoryId, "Poivron", weightTypeId, kgUnitId, missingProductId, true);
+    insertStockItem(user.getId(), inStockProductId, 2.0);
+
+    UUID recipeId =
+        insertRecipe(user.getId(), "Ratatouille", Instant.parse("2026-08-22T11:00:00Z"));
+    insertRecipeIngredient(recipeId, inStockProductId, kgUnitId, 0.500);
+    insertRecipeIngredient(recipeId, missingProductId, kgUnitId, 0.200);
+
+    mockMvc
+        .perform(
+            post("/api/recipes/" + recipeId + "/consume")
+                .header("Authorization", "Bearer " + token))
+        .andExpect(status().isConflict())
+        .andExpect(jsonPath("$.missing.length()").value(1))
+        .andExpect(jsonPath("$.missing[0].productId").value(missingProductId.toString()))
+        .andExpect(jsonPath("$.insufficient.length()").value(0));
+
+    BigDecimal remaining =
+        jdbcTemplate.queryForObject(
+            "select quantity from stock_items where user_id = ? and product_id = ?",
+            BigDecimal.class,
+            user.getId(),
+            inStockProductId);
+    assertThat(remaining).isEqualByComparingTo("2.000");
+  }
+
+  @Test
+  void consumeRecipeWithoutForceReturnsConflictWhenInsufficientAndKeepsAtomicity()
+      throws Exception {
+    String email = "recipes-consume-insuff-" + UUID.randomUUID() + "@test.fr";
+    String token = registerActivateAndLogin(email);
+    User user = userRepository.findByEmail(email).orElseThrow();
+
+    UUID categoryId = saveCategory(user, "Recettes", "#778899");
+    UUID weightTypeId = weightTypeId();
+    UUID kgUnitId = kgUnitId(weightTypeId);
+
+    UUID sufficientProductId = UUID.randomUUID();
+    UUID insufficientProductId = UUID.randomUUID();
+    insertProduct(
+        user.getId(), categoryId, "Oignon", weightTypeId, kgUnitId, sufficientProductId, true);
+    insertProduct(
+        user.getId(), categoryId, "Sel", weightTypeId, kgUnitId, insufficientProductId, true);
+    insertStockItem(user.getId(), sufficientProductId, 2.0);
+    insertStockItem(user.getId(), insufficientProductId, 0.200);
+
+    UUID recipeId = insertRecipe(user.getId(), "Soupe", Instant.parse("2026-08-22T12:00:00Z"));
+    insertRecipeIngredient(recipeId, sufficientProductId, kgUnitId, 0.500);
+    insertRecipeIngredient(recipeId, insufficientProductId, kgUnitId, 0.500);
+
+    mockMvc
+        .perform(
+            post("/api/recipes/" + recipeId + "/consume")
+                .header("Authorization", "Bearer " + token))
+        .andExpect(status().isConflict())
+        .andExpect(jsonPath("$.missing.length()").value(0))
+        .andExpect(jsonPath("$.insufficient.length()").value(1))
+        .andExpect(jsonPath("$.insufficient[0].productId").value(insufficientProductId.toString()))
+        .andExpect(jsonPath("$.insufficient[0].required").value(0.5))
+        .andExpect(jsonPath("$.insufficient[0].available").value(0.2));
+
+    BigDecimal remainingSufficient =
+        jdbcTemplate.queryForObject(
+            "select quantity from stock_items where user_id = ? and product_id = ?",
+            BigDecimal.class,
+            user.getId(),
+            sufficientProductId);
+    BigDecimal remainingInsufficient =
+        jdbcTemplate.queryForObject(
+            "select quantity from stock_items where user_id = ? and product_id = ?",
+            BigDecimal.class,
+            user.getId(),
+            insufficientProductId);
+
+    assertThat(remainingSufficient).isEqualByComparingTo("2.000");
+    assertThat(remainingInsufficient).isEqualByComparingTo("0.200");
+  }
+
+  @Test
+  void consumeRecipeWithForceDeductsWhatPossibleSetsInsufficientToZeroAndIgnoresMissing()
+      throws Exception {
+    String email = "recipes-consume-force-" + UUID.randomUUID() + "@test.fr";
+    String token = registerActivateAndLogin(email);
+    User user = userRepository.findByEmail(email).orElseThrow();
+
+    UUID categoryId = saveCategory(user, "Recettes", "#8899AA");
+    UUID weightTypeId = weightTypeId();
+    UUID kgUnitId = kgUnitId(weightTypeId);
+
+    UUID sufficientProductId = UUID.randomUUID();
+    UUID insufficientProductId = UUID.randomUUID();
+    UUID missingProductId = UUID.randomUUID();
+    insertProduct(
+        user.getId(), categoryId, "Carotte", weightTypeId, kgUnitId, sufficientProductId, true);
+    insertProduct(
+        user.getId(),
+        categoryId,
+        "Pomme de terre",
+        weightTypeId,
+        kgUnitId,
+        insufficientProductId,
+        true);
+    insertProduct(
+        user.getId(), categoryId, "Poireau", weightTypeId, kgUnitId, missingProductId, true);
+
+    insertStockItem(user.getId(), sufficientProductId, 1.0);
+    insertStockItem(user.getId(), insufficientProductId, 0.200);
+    jdbcTemplate.update(
+        "update stock_items set low_threshold = ? where user_id = ? and product_id = ?",
+        0.100,
+        user.getId(),
+        insufficientProductId);
+
+    UUID recipeId = insertRecipe(user.getId(), "Potage", Instant.parse("2026-08-22T13:00:00Z"));
+    insertRecipeIngredient(recipeId, sufficientProductId, kgUnitId, 0.400);
+    insertRecipeIngredient(recipeId, insufficientProductId, kgUnitId, 0.500);
+    insertRecipeIngredient(recipeId, missingProductId, kgUnitId, 0.300);
+
+    mockMvc
+        .perform(
+            post("/api/recipes/" + recipeId + "/consume")
+                .header("Authorization", "Bearer " + token)
+                .param("force", "true"))
+        .andExpect(status().isOk())
+        .andExpect(jsonPath("$.results.length()").value(2))
+        .andExpect(jsonPath("$.results[0].productId").value(sufficientProductId.toString()))
+        .andExpect(jsonPath("$.results[0].deducted").value(0.4))
+        .andExpect(jsonPath("$.results[0].newStockQuantity").value(0.6))
+        .andExpect(jsonPath("$.results[0].forced").value(false))
+        .andExpect(jsonPath("$.results[1].productId").value(insufficientProductId.toString()))
+        .andExpect(jsonPath("$.results[1].deducted").value(0.2))
+        .andExpect(jsonPath("$.results[1].newStockQuantity").value(0.0))
+        .andExpect(jsonPath("$.results[1].forced").value(true));
+
+    BigDecimal remainingSufficient =
+        jdbcTemplate.queryForObject(
+            "select quantity from stock_items where user_id = ? and product_id = ?",
+            BigDecimal.class,
+            user.getId(),
+            sufficientProductId);
+    BigDecimal remainingInsufficient =
+        jdbcTemplate.queryForObject(
+            "select quantity from stock_items where user_id = ? and product_id = ?",
+            BigDecimal.class,
+            user.getId(),
+            insufficientProductId);
+
+    Integer shoppingCountForInsufficient =
+        jdbcTemplate.queryForObject(
+            "select count(*) from shopping_list_items where user_id = ? and product_id = ? and added_automatically = true",
+            Integer.class,
+            user.getId(),
+            insufficientProductId);
+
+    assertThat(remainingSufficient).isEqualByComparingTo("0.600");
+    assertThat(remainingInsufficient).isEqualByComparingTo("0.000");
+    assertThat(shoppingCountForInsufficient).isEqualTo(1);
   }
 
   private UUID weightTypeId() {
