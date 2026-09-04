@@ -1,22 +1,26 @@
 package fr.stockshop.stock_api.security.oauth2;
 
-import com.fasterxml.jackson.databind.ObjectMapper;
 import fr.stockshop.stock_api.user.dto.OAuth2LoginOutcome;
 import fr.stockshop.stock_api.user.service.AuthenticationService;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
 import java.io.IOException;
 import lombok.RequiredArgsConstructor;
-import org.springframework.http.MediaType;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.security.core.Authentication;
 import org.springframework.security.oauth2.client.authentication.OAuth2AuthenticationToken;
 import org.springframework.security.oauth2.core.oidc.user.OidcUser;
 import org.springframework.security.web.authentication.AuthenticationSuccessHandler;
 import org.springframework.stereotype.Component;
+import org.springframework.web.util.UriComponentsBuilder;
 
 /**
- * Connexion Google réussie : crée ou relie le compte utilisateur puis renvoie directement les
- * jetons en JSON (l'API étant stateless, aucune redirection navigateur n'est utilisée ici).
+ * Connexion Google réussie : crée ou relie le compte utilisateur, puis redirige vers le deep link
+ * de l'app mobile stock-mobile avec un code d'échange à usage unique (voir {@link
+ * OAuth2ExchangeCodeService}). L'API étant stateless et consommée uniquement par un client natif,
+ * une WebView/navigateur système ne peut pas lire un JSON renvoyé directement dans la réponse HTTP
+ * de ce callback : l'app échange ensuite ce code contre les jetons via GET
+ * /api/auth/oauth2/exchange.
  */
 @Component
 @RequiredArgsConstructor
@@ -25,7 +29,10 @@ public class OAuth2AuthenticationSuccessHandler implements AuthenticationSuccess
   private static final String PROVIDER_GOOGLE = "google";
 
   private final AuthenticationService authenticationService;
-  private final ObjectMapper objectMapper = new ObjectMapper();
+  private final OAuth2ExchangeCodeService exchangeCodeService;
+
+  @Value("${app.oauth2.mobile-redirect-uri}")
+  private String mobileRedirectUri;
 
   @Override
   public void onAuthenticationSuccess(
@@ -46,9 +53,12 @@ public class OAuth2AuthenticationSuccessHandler implements AuthenticationSuccess
             oidcUser.getPicture(),
             request.getHeader("User-Agent"));
 
-    response.setStatus(HttpServletResponse.SC_OK);
-    response.setContentType(MediaType.APPLICATION_JSON_VALUE);
-    objectMapper.writeValue(
-        response.getWriter(), outcome.requiresLink() ? outcome.linkRequired() : outcome.tokens());
+    String exchangeCode = exchangeCodeService.create(outcome);
+    String redirectUrl =
+        UriComponentsBuilder.fromUriString(mobileRedirectUri)
+            .queryParam("code", exchangeCode)
+            .build()
+            .toUriString();
+    response.sendRedirect(redirectUrl);
   }
 }

@@ -12,6 +12,7 @@ import fr.stockshop.stock_api.exception.UserNotFoundException;
 import fr.stockshop.stock_api.mail.EmailService;
 import fr.stockshop.stock_api.security.TokenService;
 import fr.stockshop.stock_api.security.jwt.JwtService;
+import fr.stockshop.stock_api.security.oauth2.OAuth2ExchangeCodeService;
 import fr.stockshop.stock_api.user.dto.AuthResponse;
 import fr.stockshop.stock_api.user.dto.ConfirmEmailRequest;
 import fr.stockshop.stock_api.user.dto.ForgotPasswordRequest;
@@ -76,6 +77,7 @@ public class AuthenticationService {
   private final TokenService tokenService;
   private final EmailService emailService;
   private final UserMapper userMapper;
+  private final OAuth2ExchangeCodeService oAuth2ExchangeCodeService;
 
   @Value("${security.jwt.refresh-token-expiration}")
   private long rememberMeSessionExpiration;
@@ -244,6 +246,15 @@ public class AuthenticationService {
             .build());
 
     return OAuth2LoginOutcome.linkRequired(rawLinkContext);
+  }
+
+  /**
+   * Échange le code à usage unique reçu par l'app mobile après redirection depuis le callback
+   * OAuth2 (voir {@link OAuth2ExchangeCodeService}) contre le résultat de connexion (jetons, ou
+   * demande de liaison de compte).
+   */
+  public OAuth2LoginOutcome exchangeOAuth2Code(String code) {
+    return oAuth2ExchangeCodeService.consume(code);
   }
 
   /**
