@@ -5,7 +5,6 @@ import fr.stockshop.stock_api.security.oauth2.CookieOAuth2AuthorizationRequestRe
 import fr.stockshop.stock_api.security.oauth2.GoogleOnlyAuthorizationRequestResolver;
 import fr.stockshop.stock_api.security.oauth2.OAuth2AuthenticationFailureHandler;
 import fr.stockshop.stock_api.security.oauth2.OAuth2AuthenticationSuccessHandler;
-import java.util.List;
 import lombok.RequiredArgsConstructor;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
@@ -17,9 +16,6 @@ import org.springframework.security.config.annotation.web.configurers.AbstractHt
 import org.springframework.security.config.http.SessionCreationPolicy;
 import org.springframework.security.web.SecurityFilterChain;
 import org.springframework.security.web.authentication.UsernamePasswordAuthenticationFilter;
-import org.springframework.web.cors.CorsConfiguration;
-import org.springframework.web.cors.CorsConfigurationSource;
-import org.springframework.web.cors.UrlBasedCorsConfigurationSource;
 
 /**
  * Configuration Spring Security : API stateless authentifiée par JWT. Les endpoints publics (auth,
@@ -64,7 +60,12 @@ public class SecurityConfig {
   @Bean
   public SecurityFilterChain securityFilterChain(HttpSecurity http) {
     http.csrf(AbstractHttpConfigurer::disable)
-        .cors(cors -> cors.configurationSource(corsConfigurationSource()))
+        // CORS désactivé : l'API n'est consommée que par l'app mobile native stock-mobile
+        // (React Native/Expo), jamais par un navigateur — aucun usage web n'est prévu pour ce
+        // projet. Le CORS étant une protection appliquée par les navigateurs (absente des clients
+        // HTTP natifs), la conserver ouverte ("*") n'apporterait aucune fonctionnalité tout en
+        // élargissant inutilement la surface d'attaque côté web.
+        .cors(AbstractHttpConfigurer::disable)
         .sessionManagement(sm -> sm.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
         .authorizeHttpRequests(
             auth -> auth.requestMatchers(PUBLIC_ENDPOINTS).permitAll().anyRequest().authenticated())
@@ -94,18 +95,5 @@ public class SecurityConfig {
         .addFilterAfter(requestLocaleFilter, JwtAuthenticationFilter.class);
 
     return http.build();
-  }
-
-  @Bean
-  public CorsConfigurationSource corsConfigurationSource() {
-    CorsConfiguration configuration = new CorsConfiguration();
-    configuration.setAllowedOriginPatterns(List.of("*"));
-    configuration.setAllowedMethods(List.of("GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"));
-    configuration.setAllowedHeaders(List.of("*"));
-    configuration.setAllowCredentials(true);
-
-    UrlBasedCorsConfigurationSource source = new UrlBasedCorsConfigurationSource();
-    source.registerCorsConfiguration("/**", configuration);
-    return source;
   }
 }

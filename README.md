@@ -42,6 +42,7 @@ Un fichier d'exemple `.env.example` liste les variables attendues :
 | `SMTP_AUTH`               | Active l'authentification SMTP                                      | `true`             |
 | `SMTP_STARTTLS`           | Active STARTTLS pour la connexion SMTP                               | `true`             |
 | `MAIL_FROM`               | Adresse expéditrice des emails envoyés par l'application             | `no-reply@stockshop.fr` |
+| `OAUTH2_MOBILE_REDIRECT_URI` | Deep link de l'app mobile `stock-mobile` (callback OAuth2 Google) | `stockshop://oauth2/callback` |
 
 > ⚠️ Ne jamais commiter le fichier `.env` réel. Dupliquez `.env.example` en `.env` et complétez les valeurs avant de démarrer le projet.
 
@@ -171,8 +172,12 @@ Le schéma est entièrement versionné via **Flyway** (`src/main/resources/db/mi
 | `V2__seed_quantity_data.sql`               | Données de seed des référentiels `quantity_types` / `quantity_units` (poids, liquide, unité). |
 | `V3__create_refresh_tokens_table.sql`      | Table technique pour la gestion des jetons de rafraîchissement JWT. |
 | `V4__add_user_preferred_locale.sql`        | Colonne `preferred_locale` sur `users` (langue utilisée pour les emails et messages traduits). |
+| `V5__drop_refresh_tokens_table.sql`        | Suppression de `refresh_tokens`, remplacée par `user_sessions` (jeton opaque haché). |
+| `V6__create_oauth_link_contexts_table.sql` | Table des propositions de liaison de compte OAuth2 ↔ compte local en attente. |
+| `V7__convert_push_tokens_platform_to_varchar.sql` | Remplace l'ENUM natif `push_platform` par un `VARCHAR` + `CHECK`. |
+| `V8__create_oauth_exchange_codes_table.sql` | Table des codes d'échange à usage unique remis à l'app mobile après le callback OAuth2. |
 
-Principales tables : `users`, `oauth_accounts`, `oauth_link_decisions`, `user_sessions`, `push_tokens`, `quantity_types`, `quantity_units`, `categories`, `products`, `stock_items`, `shopping_list_items`, `recipes`, `recipe_ingredients`, `refresh_tokens`.
+Principales tables : `users`, `oauth_accounts`, `oauth_link_contexts`, `oauth_link_decisions`, `oauth_exchange_codes`, `user_sessions`, `push_tokens`, `quantity_types`, `quantity_units`, `categories`, `products`, `stock_items`, `shopping_list_items`, `recipes`, `recipe_ingredients`.
 
 Identifiants en `UUID`, timestamps en `TIMESTAMPTZ`, suppression en cascade documentée par table (voir commentaires dans les scripts SQL).
 
@@ -195,8 +200,9 @@ lien avec le fournisseur est stocké dans `oauth_accounts`.
 2. **APIs et services > Écran de consentement OAuth** : configurer le type (Externe pour les tests),
    le nom de l'application, l'email de support, puis ajouter les scopes `openid`, `email`, `profile`.
 3. **APIs et services > Identifiants > Créer des identifiants > ID client OAuth** :
-   - Type d'application : **Application Web**.
-   - **Origines JavaScript autorisées** : URL publique du front (ex. `http://localhost:3000`).
+   - Type d'application : **Application Web** (le flux authorization code reste géré côté serveur,
+     même si le client final est l'app mobile `stock-mobile`).
+   - **Origines JavaScript autorisées** : non nécessaire (aucun frontend web), laisser vide.
    - **URI de redirection autorisés** : URL publique de l'API suivie de
      `/api/auth/oauth2/callback`, par exemple :
      - Local : `http://localhost:8080/api/auth/oauth2/callback`
@@ -206,19 +212,32 @@ lien avec le fournisseur est stocké dans `oauth_accounts`.
    GOOGLE_CLIENT_ID=...
    GOOGLE_CLIENT_SECRET=...
    ```
-5. Redémarrer l'application. Depuis un navigateur, `GET /api/auth/oauth2/google` redirige vers
-   l'écran de consentement Google ; après acceptation, Google redirige vers
-   `/api/auth/oauth2/callback`, qui répond avec `{ accessToken, refreshToken, user }`.
+5. Redémarrer l'application. Depuis l'app mobile (WebView/navigateur système), `GET
+   /api/auth/oauth2/google` redirige vers l'écran de consentement Google ; après acceptation,
+   Google redirige vers `/api/auth/oauth2/callback`, qui **redirige à son tour** vers le deep link
+   de l'app mobile (`OAUTH2_MOBILE_REDIRECT_URI`, ex. `stockshop://oauth2/callback`) avec un code
+   d'échange à usage unique (`?code=...`), ou un paramètre d'erreur (`?error=oauth2_failed`) en cas
+   d'échec.
+6. Côté app, échanger ce code contre le résultat de connexion via `GET
+   /api/auth/oauth2/exchange?code=...`, qui répond avec `{ accessToken, refreshToken, user }` (ou
+   `{ status: "LINK_REQUIRED", linkContext }` si l'email correspond à un compte local existant, à
+   résoudre via `POST /api/auth/oauth2/link-decision`). Le code expire rapidement
+   (`OAUTH2_EXCHANGE_CODE_EXPIRATION`, 2 minutes par défaut) et n'est utilisable qu'une seule fois.
 
-> ⚠️ **À prévoir pour un futur frontend mobile (React Native)** : `localhost` ne fonctionne pas
-> depuis un appareil/émulateur mobile (voir section Docker/local plus bas pour les adresses
+> ⚠️ **Spécificités mobile (React Native/Expo, app `stock-mobile`)** : `localhost` ne fonctionne
+> pas depuis un appareil/émulateur mobile (voir section Docker/local plus bas pour les adresses
 > équivalentes), et Google exige un `redirect_uri` en **HTTPS** sauf pour `localhost`/`127.0.0.1`
-> (un tunnel type ngrok/Cloudflare Tunnel sera nécessaire pour tester depuis un téléphone physique
-> en dev). De plus, l'endpoint `/api/auth/oauth2/callback` renvoie actuellement le JSON directement
-> dans la réponse HTTP (adapté à un test via Swagger/navigateur) : une app mobile ne peut pas lire
-> ce JSON depuis une WebView/navigateur système de la même façon. Il faudra alors adapter ce
-> endpoint (redirection vers un deep link / custom URL scheme de l'app, ou échange d'un code à usage
-> unique contre les tokens) une fois le schéma d'URL du frontend RN défini.
+> (un tunnel type ngrok/Cloudflare Tunnel est nécessaire pour tester depuis un téléphone physique en
+> dev). Le deep link `OAUTH2_MOBILE_REDIRECT_URI` doit correspondre au scheme déclaré côté app
+> (`app.json` > `expo.scheme`).
+
+### CORS
+
+Aucune configuration CORS n'est appliquée (`SecurityConfig`) : l'API est consommée exclusivement
+par l'app mobile native `stock-mobile`, jamais par un navigateur, et aucun usage web n'est prévu. Le
+CORS étant une protection appliquée uniquement par les navigateurs (absente des clients HTTP
+natifs), la laisser ouverte n'apporterait aucune fonctionnalité tout en élargissant inutilement la
+surface d'attaque côté web.
 
 ## Internationalisation (i18n)
 

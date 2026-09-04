@@ -84,6 +84,12 @@ app:
   oauth2:
     # Durée de validité du linkContext proposé lors d'une liaison de compte OAuth2 (AUTH-007).
     link-context-expiration: ${OAUTH2_LINK_CONTEXT_EXPIRATION:10m}
+    # Durée de validité du code d'échange remis à l'app mobile après le callback OAuth2 (voir
+    # OAuth2ExchangeCodeService) : le temps que l'app effectue GET /api/auth/oauth2/exchange.
+    exchange-code-expiration: ${OAUTH2_EXCHANGE_CODE_EXPIRATION:2m}
+    # Deep link (custom URL scheme) de l'app mobile stock-mobile vers lequel le callback OAuth2
+    # redirige (succès : ?code=..., échec : ?error=...).
+    mobile-redirect-uri: ${OAUTH2_MOBILE_REDIRECT_URI:stockshop://oauth2/callback}
   storage:
     # Répertoire de stockage local des avatars en développement / première version.
     avatar-directory: ${AVATAR_STORAGE_DIR:uploads/avatars}

@@ -6,6 +6,7 @@ import fr.stockshop.stock_api.user.dto.ForgotPasswordRequest;
 import fr.stockshop.stock_api.user.dto.LinkDecisionRequest;
 import fr.stockshop.stock_api.user.dto.LoginRequest;
 import fr.stockshop.stock_api.user.dto.LoginResponse;
+import fr.stockshop.stock_api.user.dto.OAuth2LoginOutcome;
 import fr.stockshop.stock_api.user.dto.RefreshTokenRequest;
 import fr.stockshop.stock_api.user.dto.RegisterRequest;
 import fr.stockshop.stock_api.user.dto.ResendConfirmationRequest;
@@ -23,6 +24,7 @@ import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestHeader;
 import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
 @RestController
@@ -108,8 +110,19 @@ public class AuthController {
   }
 
   @GetMapping("/oauth2/callback")
-  @Operation(summary = "Callback Google : crée/relie le compte et retourne les jetons")
-  public ResponseEntity<LoginResponse> oauth2Callback() {
+  @Operation(
+      summary =
+          "Callback Google : crée/relie le compte puis redirige vers le deep link de l'app mobile avec un code d'échange")
+  public ResponseEntity<Void> oauth2Callback() {
     throw new UnsupportedOperationException("Géré par Spring Security, jamais appelé directement");
+  }
+
+  @GetMapping("/oauth2/exchange")
+  @Operation(
+      summary =
+          "Échanger le code reçu via le deep link mobile contre les jetons (ou une demande de liaison de compte)")
+  public ResponseEntity<Object> exchangeOAuth2Code(@RequestParam String code) {
+    OAuth2LoginOutcome outcome = authenticationService.exchangeOAuth2Code(code);
+    return ResponseEntity.ok(outcome.requiresLink() ? outcome.linkRequired() : outcome.tokens());
   }
 }
