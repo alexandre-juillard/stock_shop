@@ -24,6 +24,7 @@ FROM eclipse-temurin:25-jre-alpine AS runtime
 RUN apk update \
     && apk upgrade --no-cache \
     && apk add --no-cache \
+        'libexpat>=2.8.4-r0' \
         'libcrypto3>=3.5.8-r0' \
         'libssl3>=3.5.8-r0' \
         'openssl>=3.5.8-r0'
